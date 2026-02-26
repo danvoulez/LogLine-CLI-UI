@@ -10,6 +10,8 @@ import {
   useEffectiveConfig,
   useSaveInstanceConfig,
   useUpdateComponentFrontProps,
+  useSettings,
+  useUpdateSetting,
   useDaemonRuntimeStatus,
   useDaemonRunIntent,
   useDaemonStopIntent,
@@ -22,6 +24,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import { QuickAction } from '@/components/component-catalog/QuickAction';
 
 type ErrorMode = 'RETRY' | 'STOP' | 'CONTINUE';
+type MainSettingsDraft = {
+  api_key: string;
+  llm_api_key: string;
+  webhook_url: string;
+  websocket_url: string;
+  sse_url: string;
+};
 
 const SOURCE_HUB_OPTIONS = ['WebSocket', 'HTTP API', 'File Watch', 'Internal Bus'] as const;
 
@@ -43,10 +52,17 @@ function BackSettingsPanel({
   initialTabWebhookUrl,
   initialTabWebsocketUrl,
   initialTabSseUrl,
+  initialMainApiKey,
+  initialMainLlmApiKey,
+  initialMainWebhookUrl,
+  initialMainWebsocketUrl,
+  initialMainSseUrl,
   effectivePreview,
+  isSavingMain,
   isSavingTab,
   isSavingComponent,
   savedKey,
+  onSaveMain,
   onSaveTab,
   onSaveComponent,
   onSaveComponentFrontProps,
@@ -64,14 +80,21 @@ function BackSettingsPanel({
   initialTabWebhookUrl: string;
   initialTabWebsocketUrl: string;
   initialTabSseUrl: string;
+  initialMainApiKey: string;
+  initialMainLlmApiKey: string;
+  initialMainWebhookUrl: string;
+  initialMainWebsocketUrl: string;
+  initialMainSseUrl: string;
   effectivePreview: {
     source_hub: string;
     proc_executor: string;
     proc_error_mode: string;
   };
+  isSavingMain: boolean;
   isSavingTab: boolean;
   isSavingComponent: boolean;
-  savedKey: 'tab' | 'component' | null;
+  savedKey: 'main' | 'tab' | 'component' | null;
+  onSaveMain: (draft: MainSettingsDraft) => void;
   onSaveTab: (draft: {
     source_hub: string;
     proc_error_mode: ErrorMode;
@@ -93,6 +116,11 @@ function BackSettingsPanel({
   const [tabWebhookUrl, setTabWebhookUrl] = useState(initialTabWebhookUrl);
   const [tabWebsocketUrl, setTabWebsocketUrl] = useState(initialTabWebsocketUrl);
   const [tabSseUrl, setTabSseUrl] = useState(initialTabSseUrl);
+  const [mainApiKey, setMainApiKey] = useState(initialMainApiKey);
+  const [mainLlmApiKey, setMainLlmApiKey] = useState(initialMainLlmApiKey);
+  const [mainWebhookUrl, setMainWebhookUrl] = useState(initialMainWebhookUrl);
+  const [mainWebsocketUrl, setMainWebsocketUrl] = useState(initialMainWebsocketUrl);
+  const [mainSseUrl, setMainSseUrl] = useState(initialMainSseUrl);
   const [intentType, setIntentType] = useState(initialComponentCommand || 'sync');
   const [intentPayload, setIntentPayload] = useState('{}');
   const [runIdToStop, setRunIdToStop] = useState('');
@@ -180,6 +208,49 @@ function BackSettingsPanel({
 
   return (
     <div className="space-y-5 text-white/80">
+      <section className="space-y-3 border border-white/10 bg-[#323232] rounded p-3">
+        <div className="flex items-center justify-between">
+          <h4 className="text-[10px] font-semibold tracking-wide text-white/70">Main Defaults (Global)</h4>
+          <span className="text-[8px] font-mono text-white/35">All Tabs</span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">api_key</span>
+            <input value={mainApiKey} onChange={(e) => setMainApiKey(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">llm_api_key</span>
+            <input value={mainLlmApiKey} onChange={(e) => setMainLlmApiKey(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">webhook_url</span>
+            <input value={mainWebhookUrl} onChange={(e) => setMainWebhookUrl(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">websocket_url</span>
+            <input value={mainWebsocketUrl} onChange={(e) => setMainWebsocketUrl(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block md:col-span-2">
+            <span className="text-[10px] text-white/45 mb-1 block">sse_url</span>
+            <input value={mainSseUrl} onChange={(e) => setMainSseUrl(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+        </div>
+        <QuickAction
+          label={savedKey === 'main' ? 'MAIN SAVED' : isSavingMain ? 'SAVING...' : 'SAVE MAIN DEFAULTS'}
+          onClick={() =>
+            onSaveMain({
+              api_key: mainApiKey,
+              llm_api_key: mainLlmApiKey,
+              webhook_url: mainWebhookUrl,
+              websocket_url: mainWebsocketUrl,
+              sse_url: mainSseUrl,
+            })
+          }
+          variant="secondary"
+          disabled={isSavingMain}
+        />
+      </section>
+
       <section className="space-y-3 border border-white/10 bg-[#323232] rounded p-3">
         <div className="flex items-center justify-between">
           <h4 className="text-[10px] font-semibold tracking-wide text-white/70">Tab Defaults</h4>
@@ -497,8 +568,10 @@ export default function Page() {
   const savePanelSettings = useSavePanelSettings();
   const saveInstanceConfig = useSaveInstanceConfig();
   const updateComponentFrontProps = useUpdateComponentFrontProps();
+  const settings = useSettings();
+  const updateSetting = useUpdateSetting();
 
-  const [savedKey, setSavedKey] = useState<'tab' | 'component' | null>(null);
+  const [savedKey, setSavedKey] = useState<'main' | 'tab' | 'component' | null>(null);
 
   const activePanel = panels[activePanelIndex];
   const selectedInstanceId = activePanel
@@ -520,7 +593,7 @@ export default function Page() {
     }
   }, [activePanel, selectedInstanceByPanel, setSelectedInstance]);
 
-  const showSaved = (key: 'tab' | 'component') => {
+  const showSaved = (key: 'main' | 'tab' | 'component') => {
     setSavedKey(key);
     setTimeout(() => setSavedKey(null), 1800);
   };
@@ -590,6 +663,46 @@ export default function Page() {
     });
   };
 
+  const appComponentDefaults = (() => {
+    const source = settings.data as Record<string, unknown> | undefined;
+    const defaults = source?.component_defaults;
+    return defaults && typeof defaults === 'object' && !Array.isArray(defaults)
+      ? (defaults as Record<string, unknown>)
+      : {};
+  })();
+
+  const handleSaveMainSettings = (draft: MainSettingsDraft) => {
+    const previousTagBindings =
+      appComponentDefaults.tag_bindings &&
+      typeof appComponentDefaults.tag_bindings === 'object' &&
+      !Array.isArray(appComponentDefaults.tag_bindings)
+        ? (appComponentDefaults.tag_bindings as Record<string, unknown>)
+        : {};
+
+    const nextDefaults = {
+      ...appComponentDefaults,
+      api_key: draft.api_key,
+      llm_api_key: draft.llm_api_key,
+      webhook_url: draft.webhook_url,
+      websocket_url: draft.websocket_url,
+      sse_url: draft.sse_url,
+      tag_bindings: {
+        ...previousTagBindings,
+        'secret:api': draft.api_key,
+        'secret:llm': draft.llm_api_key,
+        'llm:api_key': draft.llm_api_key,
+        'transport:webhook': draft.webhook_url,
+        'transport:websocket': draft.websocket_url,
+        'transport:sse': draft.sse_url,
+      },
+    };
+
+    updateSetting.mutate(
+      { key: 'component_defaults', value: nextDefaults },
+      { onSuccess: () => showSaved('main') }
+    );
+  };
+
   if (!activePanel) return null;
 
   const panelSettingsData = panelSettings.data?.settings ?? {};
@@ -639,6 +752,11 @@ export default function Page() {
                   initialTabWebhookUrl={typeof panelSettingsData.webhook_url === 'string' ? panelSettingsData.webhook_url : ''}
                   initialTabWebsocketUrl={typeof panelSettingsData.websocket_url === 'string' ? panelSettingsData.websocket_url : ''}
                   initialTabSseUrl={typeof panelSettingsData.sse_url === 'string' ? panelSettingsData.sse_url : ''}
+                  initialMainApiKey={typeof appComponentDefaults.api_key === 'string' ? appComponentDefaults.api_key : ''}
+                  initialMainLlmApiKey={typeof appComponentDefaults.llm_api_key === 'string' ? appComponentDefaults.llm_api_key : ''}
+                  initialMainWebhookUrl={typeof appComponentDefaults.webhook_url === 'string' ? appComponentDefaults.webhook_url : ''}
+                  initialMainWebsocketUrl={typeof appComponentDefaults.websocket_url === 'string' ? appComponentDefaults.websocket_url : ''}
+                  initialMainSseUrl={typeof appComponentDefaults.sse_url === 'string' ? appComponentDefaults.sse_url : ''}
                   effectivePreview={{
                     source_hub:
                       typeof effectiveData.source_hub === 'string' ? effectiveData.source_hub : '-',
@@ -651,9 +769,11 @@ export default function Page() {
                         ? effectiveData.proc_error_mode
                         : '-',
                   }}
+                  isSavingMain={updateSetting.isPending}
                   isSavingTab={savePanelSettings.isPending}
                   isSavingComponent={saveInstanceConfig.isPending}
                   savedKey={savedKey}
+                  onSaveMain={handleSaveMainSettings}
                   onSaveTab={handleSaveTabSettings}
                   onSaveComponent={handleSaveComponent}
                   onSaveComponentFrontProps={handleSaveComponentFrontProps}
