@@ -103,6 +103,11 @@ export function ComponentStore() {
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
+                  draggable
+                  onDragStartCapture={(e: React.DragEvent<HTMLDivElement>) => {
+                    e.dataTransfer.setData('application/x-logline-component-id', comp.component_id);
+                    e.dataTransfer.effectAllowed = 'copy';
+                  }}
                   className="bg-white/[0.02] border border-white/5 rounded-xl p-4 flex flex-col gap-3 hover:border-blue-500/20 transition-all group relative overflow-hidden"
                 >
                   <div className="flex items-start justify-between relative z-10">

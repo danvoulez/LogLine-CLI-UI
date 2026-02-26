@@ -16,8 +16,9 @@ import { ObservabilityHub } from '../component-catalog/ObservabilityHub';
 import { BillingDaily } from '../component-catalog/BillingDaily';
 
 import { useEffectiveConfig, useRemoveComponent } from '@/lib/api/db-hooks';
-import { Trash2 } from 'lucide-react';
+import { Settings2, Trash2, Activity, MessageSquare, Shield, ListChecks, Package } from 'lucide-react';
 import { useUIStore } from '@/stores/ui-store';
+import { MOCK_COMPONENTS } from '@/mocks/ublx-mocks';
 
 interface ComponentRendererProps {
   instance: PanelComponentInstance;
@@ -29,10 +30,28 @@ export function ComponentRenderer({ instance, panelId }: ComponentRendererProps)
   const effectiveConfig = useEffectiveConfig(instance.instance_id);
   const selectedInstanceByPanel = useUIStore((state) => state.selectedInstanceByPanel);
   const setSelectedInstance = useUIStore((state) => state.setSelectedInstance);
+  const toggleFlip = useUIStore((state) => state.toggleFlip);
   const isSelected = selectedInstanceByPanel[panelId] === instance.instance_id;
   const effective = effectiveConfig.data?.effective ?? {};
   const bindings = effectiveConfig.data?.bindings ?? {};
   const missingRequiredTags = effectiveConfig.data?.missing_required_tags ?? [];
+  const manifest = MOCK_COMPONENTS.find((m) => m.component_id === instance.component_id);
+  const title = manifest?.name ?? instance.component_id;
+
+  const icon = (() => {
+    switch (instance.component_id) {
+      case 'chat-ai':
+        return MessageSquare;
+      case 'observability-hub':
+        return Activity;
+      case 'secret-field':
+        return Shield;
+      case 'billing-daily':
+        return ListChecks;
+      default:
+        return Package;
+    }
+  })();
 
   const renderComponent = () => {
     switch (instance.component_id) {
@@ -135,25 +154,49 @@ export function ComponentRenderer({ instance, panelId }: ComponentRendererProps)
     <div
       className={`w-full h-full relative group/comp rounded-md ${
         isSelected ? 'ring-1 ring-white/35' : 'ring-1 ring-transparent hover:ring-white/15'
-      }`}
+      } cursor-grab active:cursor-grabbing`}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData(
+          'application/x-logline-instance',
+          JSON.stringify({ panelId, instanceId: instance.instance_id, componentId: instance.component_id })
+        );
+        e.dataTransfer.effectAllowed = 'move';
+      }}
       onClick={() => setSelectedInstance(panelId, instance.instance_id)}
     >
-      {renderComponent()}
+      <div className="absolute left-2 right-2 top-2 z-40 flex items-center justify-between opacity-0 group-hover/comp:opacity-100 transition-opacity">
+        <div className="inline-flex items-center gap-1.5 px-1.5 py-1 rounded bg-[#2b2b2b]/90 border border-white/10 text-white/70">
+          {React.createElement(icon, { size: 11 })}
+          <span className="text-[9px] font-medium truncate max-w-[120px]">{title}</span>
+        </div>
+        <div className="inline-flex items-center gap-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedInstance(panelId, instance.instance_id);
+              toggleFlip(panelId);
+            }}
+            className="p-1.5 bg-[#2f2f2f]/90 hover:bg-[#3a3a3a] rounded border border-white/10 text-white/60 hover:text-white/90"
+            title="Settings"
+          >
+            <Settings2 size={11} />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              removeComponent.mutate({ panelId, instanceId: instance.instance_id });
+            }}
+            disabled={removeComponent.isPending}
+            className="p-1.5 bg-red-500/20 hover:bg-red-500 rounded border border-red-500/30 text-red-300 hover:text-white disabled:opacity-30"
+            title="Remove component"
+          >
+            <Trash2 size={11} />
+          </button>
+        </div>
+      </div>
 
-      {/* Quick Remove Button (only for non-store components) */}
-      {instance.component_id !== 'component-store' && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            removeComponent.mutate({ panelId, instanceId: instance.instance_id });
-          }}
-          disabled={removeComponent.isPending}
-          className="absolute top-2 right-2 p-1.5 bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white rounded-md opacity-0 group-hover/comp:opacity-100 transition-all z-50 border border-red-500/30 disabled:opacity-30"
-          title="Remove component"
-        >
-          <Trash2 size={12} />
-        </button>
-      )}
+      {renderComponent()}
     </div>
   );
 }

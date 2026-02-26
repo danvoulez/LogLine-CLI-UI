@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useUIStore } from '@/stores/ui-store';
-import { usePanels, useCreatePanel, useDeletePanel, useRenamePanel } from '@/lib/api/db-hooks';
+import { usePanels, useCreatePanel, useDeletePanel, useRenamePanel, useAddComponent, useRemoveComponent } from '@/lib/api/db-hooks';
 import { useDaemonHealth, useDaemonRuntimeStatus } from '@/lib/api/db-hooks';
 import { ChevronLeft, ChevronRight, Settings, Activity, Home, Upload, FileText, Database, Cpu, ShoppingBag, Plus, Trash2, Search, Wifi, WifiOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -16,6 +16,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const createPanel = useCreatePanel();
   const deletePanel  = useDeletePanel();
   const renamePanel = useRenamePanel();
+  const addComponent = useAddComponent();
+  const removeComponent = useRemoveComponent();
 
   // ── Ephemeral UI state ─────────────────────────────────────────────────────
   const {
@@ -39,6 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const totalPanels = panels.length;
   const [editingPanelId, setEditingPanelId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const [isTrashOver, setIsTrashOver] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -80,6 +83,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       { panelId },
       { onSuccess: () => setActivePanelIndex(Math.max(0, activePanelIndex - 1)) }
     );
+  };
+
+  const parseDropped = (e: React.DragEvent) => {
+    const componentId = e.dataTransfer.getData('application/x-logline-component-id');
+    const instanceRaw = e.dataTransfer.getData('application/x-logline-instance');
+    let instance: { panelId: string; instanceId: string; componentId?: string } | null = null;
+    if (instanceRaw) {
+      try {
+        instance = JSON.parse(instanceRaw) as { panelId: string; instanceId: string; componentId?: string };
+      } catch {
+        instance = null;
+      }
+    }
+    return { componentId: componentId || null, instance };
+  };
+
+  const handleDropToPanel = (panelId: string, e: React.DragEvent) => {
+    e.preventDefault();
+    const dropped = parseDropped(e);
+    if (dropped.componentId) {
+      addComponent.mutate({ panelId, componentId: dropped.componentId });
+    }
+  };
+
+  const handleDropToTrash = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsTrashOver(false);
+    const dropped = parseDropped(e);
+    if (!dropped.instance) return;
+    removeComponent.mutate({ panelId: dropped.instance.panelId, instanceId: dropped.instance.instanceId });
   };
 
   const beginRename = (panelId: string, currentName: string) => {
@@ -176,7 +209,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Panel Container */}
         <div className="w-full h-full p-1.5 flex items-center justify-center">
-          {children}
+          <div
+            className="w-full h-full"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              const panel = panels[activePanelIndex];
+              if (!panel) return;
+              handleDropToPanel(panel.panel_id, e);
+            }}
+          >
+            {children}
+          </div>
         </div>
 
         {/* Store Overlay */}
@@ -238,6 +281,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Footer / Tab Bar */}
       <footer className="h-11 border-t border-white/10 flex items-center justify-between px-4 bg-[var(--tab-strip)] z-50">
         <div className="w-1/4 flex items-center">
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsTrashOver(true);
+            }}
+            onDragLeave={() => setIsTrashOver(false)}
+            onDrop={handleDropToTrash}
+            className={`mr-2 p-1.5 rounded border transition-all ${
+              isTrashOver
+                ? 'bg-red-500/20 border-red-400/40 text-red-200'
+                : 'bg-[#2c2c2c] border-white/10 text-white/35'
+            }`}
+            title="Drop component here to remove"
+          >
+            <Trash2 size={12} />
+          </div>
           <button
             onClick={toggleStore}
             className={`flex items-center gap-2 px-2.5 py-1 rounded text-[9px] font-semibold uppercase tracking-wide transition-all border ${
@@ -277,6 +336,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <button
                     onClick={() => setActivePanelIndex(idx)}
                     onDoubleClick={() => beginRename(panel.panel_id, panel.name)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => handleDropToPanel(panel.panel_id, e)}
                     className={`flex items-center gap-1.5 px-2 py-1 rounded border transition-all ${
                       isActive
                         ? 'bg-[#3a3a3a] border-white/20 text-white'
