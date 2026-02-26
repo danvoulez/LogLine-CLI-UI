@@ -23,6 +23,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setActivePanelIndex,
     nextPanel,
     prevPanel,
+    toggleFlip,
     isStoreOpen,
     toggleStore,
     storeSearch,
@@ -141,7 +142,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="w-1/3 flex justify-end">
-          <button className="p-1.5 hover:bg-white/5 rounded transition-all text-white/35 hover:text-white/60">
+          <button
+            onClick={() => {
+              const panel = panels[activePanelIndex];
+              if (panel) toggleFlip(panel.panel_id);
+            }}
+            className="p-1.5 hover:bg-white/5 rounded transition-all text-white/35 hover:text-white/60"
+            title="Tab settings"
+          >
             <Settings size={14} />
           </button>
         </div>
