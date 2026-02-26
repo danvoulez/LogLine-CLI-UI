@@ -58,6 +58,9 @@ function BackSettingsPanel({
   initialMainWebsocketUrl,
   initialMainSseUrl,
   effectivePreview,
+  bindings,
+  bindingSources,
+  missingRequiredTags,
   isSavingMain,
   isSavingTab,
   isSavingComponent,
@@ -90,6 +93,9 @@ function BackSettingsPanel({
     proc_executor: string;
     proc_error_mode: string;
   };
+  bindings: Record<string, unknown>;
+  bindingSources: Record<string, { source: 'instance' | 'panel' | 'app'; matched_tag: string }>;
+  missingRequiredTags: string[];
   isSavingMain: boolean;
   isSavingTab: boolean;
   isSavingComponent: boolean;
@@ -379,6 +385,28 @@ function BackSettingsPanel({
               <div className="text-white/35 font-mono">source_hub: {effectivePreview.source_hub}</div>
               <div className="text-white/35 font-mono">proc_executor: {effectivePreview.proc_executor}</div>
               <div className="text-white/35 font-mono">proc_error_mode: {effectivePreview.proc_error_mode}</div>
+            </div>
+
+            <div className="text-[10px] border border-white/10 rounded p-2.5 bg-[#2a2a2a] space-y-2">
+              <div className="text-white/55">Binding Inspector</div>
+              {Object.keys(bindingSources).length === 0 ? (
+                <div className="text-white/35">No bindings resolved for this component.</div>
+              ) : (
+                <div className="space-y-1">
+                  {Object.entries(bindingSources).map(([requestedTag, meta]) => (
+                    <div key={requestedTag} className="grid grid-cols-[1.5fr_1fr_1fr] gap-2 items-start">
+                      <div className="text-white/70 font-mono truncate">{requestedTag}</div>
+                      <div className="text-white/45">{meta.source}</div>
+                      <div className="text-white/35 font-mono truncate">{String(bindings[requestedTag] ?? '-')}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {missingRequiredTags.length > 0 && (
+                <div className="text-amber-200 border border-amber-400/20 bg-amber-400/10 rounded p-1.5">
+                  Missing required tags: {missingRequiredTags.join(', ')}
+                </div>
+              )}
             </div>
 
             <QuickAction
@@ -769,6 +797,9 @@ export default function Page() {
                         ? effectiveData.proc_error_mode
                         : '-',
                   }}
+                  bindings={effectiveConfig.data?.bindings ?? {}}
+                  bindingSources={effectiveConfig.data?.binding_sources ?? {}}
+                  missingRequiredTags={effectiveConfig.data?.missing_required_tags ?? []}
                   isSavingMain={updateSetting.isPending}
                   isSavingTab={savePanelSettings.isPending}
                   isSavingComponent={saveInstanceConfig.isPending}
