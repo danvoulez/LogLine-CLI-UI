@@ -8,6 +8,7 @@ import {
   useDaemonWhoami,
   useDaemonEvents,
 } from '@/lib/api/db-hooks';
+import { resolveObservabilityCascadeSettings } from '@/lib/config/component-settings';
 
 function tiny(value: unknown): string {
   if (value === null || value === undefined) return '-';
@@ -30,14 +31,9 @@ export function ObservabilityHub({ effective }: ObservabilityHubProps) {
   const whoami = useDaemonWhoami();
   const events = useDaemonEvents();
 
-  const limitRaw = typeof effective?.observability_event_limit === 'number'
-    ? effective.observability_event_limit
-    : Number(effective?.observability_event_limit ?? 8);
-  const eventLimit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(30, Math.trunc(limitRaw))) : 8;
-  const kindContains =
-    typeof effective?.observability_kind_contains === 'string'
-      ? effective.observability_kind_contains.toLowerCase()
-      : '';
+  const obsSettings = resolveObservabilityCascadeSettings(effective ?? {});
+  const eventLimit = obsSettings.event_limit;
+  const kindContains = obsSettings.kind_contains;
   const eventRows = (events.data ?? [])
     .filter((evt) => {
       if (!kindContains) return true;

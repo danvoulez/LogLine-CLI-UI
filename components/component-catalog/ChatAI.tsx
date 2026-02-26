@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { Send } from 'lucide-react';
 import { useChatHistory, useSendChatMessage } from '@/lib/api/db-hooks';
+import { resolveChatCascadeSettings } from '@/lib/config/component-settings';
 
 type ChatAIProps = {
   session_id?: string;
@@ -12,15 +13,14 @@ type ChatAIProps = {
 };
 
 export function ChatAI(props: ChatAIProps) {
+  const chatSettings = resolveChatCascadeSettings(props.effective ?? {});
   const fallbackSession = useMemo(() => {
     const panel = props.panel_id ?? 'panel';
     const instance = props.instance_id ?? 'instance';
     return `chat-${panel}-${instance}`;
   }, [props.panel_id, props.instance_id]);
 
-  const effectiveSessionId =
-    typeof props.effective?.chat_session_id === 'string' ? props.effective.chat_session_id : undefined;
-  const sessionId = props.session_id ?? effectiveSessionId ?? fallbackSession;
+  const sessionId = props.session_id ?? chatSettings.session_id ?? fallbackSession;
   const history = useChatHistory(sessionId);
   const send = useSendChatMessage();
   const [draft, setDraft] = useState('');
@@ -40,20 +40,13 @@ export function ChatAI(props: ChatAIProps) {
       {
         onSuccess: () => {
           setDraft('');
-          const autoReply =
-            props.effective?.chat_auto_reply === true ||
-            props.effective?.chat_auto_reply === 'true';
-          if (autoReply) {
-            const prefix =
-              typeof props.effective?.chat_assistant_prefix === 'string'
-                ? props.effective.chat_assistant_prefix
-                : 'Noted';
+          if (chatSettings.auto_reply) {
             send.mutate({
               session_id: sessionId,
               panel_id: props.panel_id,
               instance_id: props.instance_id,
               role: 'assistant',
-              content: `${prefix}: ${content}`,
+              content: `${chatSettings.assistant_prefix}: ${content}`,
             });
           }
         },

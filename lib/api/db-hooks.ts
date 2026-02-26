@@ -126,6 +126,22 @@ export function useRemoveComponent() {
   });
 }
 
+export function useUpdateComponentFrontProps() {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean }, Error, { panelId: string; instanceId: string; front_props: Record<string, unknown> }>({
+    mutationFn: ({ panelId, instanceId, front_props }) =>
+      apiFetch(`/api/panels/${panelId}/components/${instanceId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ front_props }),
+      }),
+    onSuccess: (_data, { panelId, instanceId }) => {
+      qc.invalidateQueries({ queryKey: QUERY_KEYS.panels });
+      qc.invalidateQueries({ queryKey: QUERY_KEYS.panelComponents(panelId) });
+      qc.invalidateQueries({ queryKey: QUERY_KEYS.effectiveConfig(instanceId) });
+    },
+  });
+}
+
 // ── Instance config ───────────────────────────────────────────────────────────
 export function useInstanceConfig(instanceId: string) {
   return useQuery({

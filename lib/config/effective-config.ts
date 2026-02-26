@@ -88,7 +88,14 @@ export function loadInstanceSettings(instanceId: string): JsonRecord {
     .where(eq(instanceConfigs.instance_id, instanceId))
     .get();
 
-  if (!row) return {};
+  const componentRow = db
+    .select({ front_props: panelComponents.front_props })
+    .from(panelComponents)
+    .where(eq(panelComponents.instance_id, instanceId))
+    .get();
+
+  const frontProps = parseJsonObject(componentRow?.front_props);
+  if (!row) return frontProps;
 
   return {
     source_hub: row.source_hub,
@@ -103,6 +110,7 @@ export function loadInstanceSettings(instanceId: string): JsonRecord {
     proc_retries: row.proc_retries,
     proc_backoff: row.proc_backoff,
     proc_error_mode: row.proc_error_mode,
+    ...frontProps,
   };
 }
 

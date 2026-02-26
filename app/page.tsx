@@ -9,6 +9,7 @@ import {
   useInstanceConfig,
   useEffectiveConfig,
   useSaveInstanceConfig,
+  useUpdateComponentFrontProps,
   useDaemonRuntimeStatus,
   useDaemonRunIntent,
   useDaemonStopIntent,
@@ -36,12 +37,14 @@ function BackSettingsPanel({
   initialTabErrorMode,
   initialComponentCommand,
   initialComponentErrorMode,
+  initialComponentFrontProps,
   effectivePreview,
   isSavingTab,
   isSavingComponent,
   savedKey,
   onSaveTab,
   onSaveComponent,
+  onSaveComponentFrontProps,
 }: {
   panelName: string;
   selectedComponentId: string | null;
@@ -50,6 +53,7 @@ function BackSettingsPanel({
   initialTabErrorMode: ErrorMode;
   initialComponentCommand: string;
   initialComponentErrorMode: ErrorMode;
+  initialComponentFrontProps: Record<string, unknown>;
   effectivePreview: {
     source_hub: string;
     proc_executor: string;
@@ -60,6 +64,7 @@ function BackSettingsPanel({
   savedKey: 'tab' | 'component' | null;
   onSaveTab: (draft: { source_hub: string; proc_error_mode: ErrorMode }) => void;
   onSaveComponent: (draft: { proc_command: string; proc_error_mode: ErrorMode }) => void;
+  onSaveComponentFrontProps: (nextFrontProps: Record<string, unknown>) => void;
 }) {
   const [tabSourceHub, setTabSourceHub] = useState(initialTabSourceHub);
   const [tabErrorMode, setTabErrorMode] = useState<ErrorMode>(initialTabErrorMode);
@@ -70,6 +75,27 @@ function BackSettingsPanel({
   const [runIdToStop, setRunIdToStop] = useState('');
   const [profileId, setProfileId] = useState('local');
   const [runtimeFeedback, setRuntimeFeedback] = useState<string | null>(null);
+  const [chatSessionId, setChatSessionId] = useState(
+    typeof initialComponentFrontProps.chat_session_id === 'string' ? initialComponentFrontProps.chat_session_id : ''
+  );
+  const [chatAutoReply, setChatAutoReply] = useState(
+    initialComponentFrontProps.chat_auto_reply === true || initialComponentFrontProps.chat_auto_reply === 'true'
+  );
+  const [chatAssistantPrefix, setChatAssistantPrefix] = useState(
+    typeof initialComponentFrontProps.chat_assistant_prefix === 'string'
+      ? initialComponentFrontProps.chat_assistant_prefix
+      : 'Noted'
+  );
+  const [obsEventLimit, setObsEventLimit] = useState(
+    typeof initialComponentFrontProps.observability_event_limit === 'number'
+      ? String(initialComponentFrontProps.observability_event_limit)
+      : '8'
+  );
+  const [obsKindContains, setObsKindContains] = useState(
+    typeof initialComponentFrontProps.observability_kind_contains === 'string'
+      ? initialComponentFrontProps.observability_kind_contains
+      : ''
+  );
 
   const daemonStatus = useDaemonRuntimeStatus();
   const runIntent = useDaemonRunIntent();
@@ -325,6 +351,87 @@ function BackSettingsPanel({
           {runtimeFeedback && <div className="text-blue-300 font-mono">{runtimeFeedback}</div>}
         </div>
       </section>
+
+      {selectedComponentId === 'chat-ai' && (
+        <section className="space-y-3 border border-white/10 bg-[#323232] rounded p-3">
+          <h4 className="text-[10px] font-semibold tracking-wide text-white/70">Chat Cascade Overrides</h4>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">chat_session_id</span>
+            <input
+              type="text"
+              value={chatSessionId}
+              onChange={(e) => setChatSessionId(e.target.value)}
+              className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">chat_assistant_prefix</span>
+            <input
+              type="text"
+              value={chatAssistantPrefix}
+              onChange={(e) => setChatAssistantPrefix(e.target.value)}
+              className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={chatAutoReply}
+              onChange={(e) => setChatAutoReply(e.target.checked)}
+            />
+            <span className="text-white/70">chat_auto_reply</span>
+          </label>
+          <QuickAction
+            label="SAVE CHAT OVERRIDES"
+            variant="secondary"
+            onClick={() =>
+              onSaveComponentFrontProps({
+                ...initialComponentFrontProps,
+                chat_session_id: chatSessionId,
+                chat_auto_reply: chatAutoReply,
+                chat_assistant_prefix: chatAssistantPrefix,
+              })
+            }
+          />
+        </section>
+      )}
+
+      {selectedComponentId === 'observability-hub' && (
+        <section className="space-y-3 border border-white/10 bg-[#323232] rounded p-3">
+          <h4 className="text-[10px] font-semibold tracking-wide text-white/70">Observability Cascade Overrides</h4>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">observability_event_limit</span>
+            <input
+              type="number"
+              min={1}
+              max={30}
+              value={obsEventLimit}
+              onChange={(e) => setObsEventLimit(e.target.value)}
+              className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">observability_kind_contains</span>
+            <input
+              type="text"
+              value={obsKindContains}
+              onChange={(e) => setObsKindContains(e.target.value)}
+              className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs"
+            />
+          </label>
+          <QuickAction
+            label="SAVE OBSERVABILITY OVERRIDES"
+            variant="secondary"
+            onClick={() =>
+              onSaveComponentFrontProps({
+                ...initialComponentFrontProps,
+                observability_event_limit: Math.max(1, Math.min(30, Number(obsEventLimit) || 8)),
+                observability_kind_contains: obsKindContains,
+              })
+            }
+          />
+        </section>
+      )}
     </div>
   );
 }
@@ -334,6 +441,7 @@ export default function Page() {
   const { data: panels = [] } = usePanels();
   const savePanelSettings = useSavePanelSettings();
   const saveInstanceConfig = useSaveInstanceConfig();
+  const updateComponentFrontProps = useUpdateComponentFrontProps();
 
   const [savedKey, setSavedKey] = useState<'tab' | 'component' | null>(null);
 
@@ -405,6 +513,15 @@ export default function Page() {
     );
   };
 
+  const handleSaveComponentFrontProps = (nextFrontProps: Record<string, unknown>) => {
+    if (!selectedInstance || !activePanel) return;
+    updateComponentFrontProps.mutate({
+      panelId: activePanel.panel_id,
+      instanceId: selectedInstance.instance_id,
+      front_props: nextFrontProps,
+    });
+  };
+
   if (!activePanel) return null;
 
   const panelSettingsData = panelSettings.data?.settings ?? {};
@@ -448,6 +565,7 @@ export default function Page() {
                     typeof effectiveData.proc_command === 'string' ? effectiveData.proc_command : ''
                   }
                   initialComponentErrorMode={asErrorMode(effectiveData.proc_error_mode, 'RETRY')}
+                  initialComponentFrontProps={(selectedInstance?.front_props ?? {}) as Record<string, unknown>}
                   effectivePreview={{
                     source_hub:
                       typeof effectiveData.source_hub === 'string' ? effectiveData.source_hub : '-',
@@ -465,6 +583,7 @@ export default function Page() {
                   savedKey={savedKey}
                   onSaveTab={handleSaveTabSettings}
                   onSaveComponent={handleSaveComponent}
+                  onSaveComponentFrontProps={handleSaveComponentFrontProps}
                 />
               }
             />
