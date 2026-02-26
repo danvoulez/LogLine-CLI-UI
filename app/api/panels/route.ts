@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/index';
+import { ensureDbSchema } from '@/db/bootstrap';
 import { panels, panelComponents } from '@/db/schema';
 import { seedDefaultData } from '@/db/seed';
 import { asc } from 'drizzle-orm';
@@ -16,20 +17,21 @@ const createPanelSchema = z.object({
 // Seeds the database on first call if tables are empty.
 export async function GET(): Promise<NextResponse> {
   try {
-    const count = db.select().from(panels).all().length;
-    if (count === 0) seedDefaultData();
+    await ensureDbSchema();
+    const existing = await db.select({ panel_id: panels.panel_id }).from(panels).limit(1);
+    if (existing.length === 0) await seedDefaultData();
 
-    const allPanels = db
+    const allPanels = await db
       .select()
       .from(panels)
       .orderBy(asc(panels.position))
-      .all();
+      ;
 
-    const allComponents = db
+    const allComponents = await db
       .select()
       .from(panelComponents)
       .orderBy(asc(panelComponents.position))
-      .all();
+      ;
 
     // Group components by panel_id in JS
     const componentsByPanel = allComponents.reduce<Record<string, typeof allComponents>>(
@@ -77,10 +79,11 @@ export async function GET(): Promise<NextResponse> {
 // Body: { name: string }
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
+    await ensureDbSchema();
     const body = createPanelSchema.parse(await req.json());
     const name = body.name ?? 'New Tab';
 
-    const allPanels = db.select().from(panels).all();
+    const allPanels = await db.select().from(panels);
     const maxPosition = allPanels.reduce((max, p) => Math.max(max, p.position), -1);
 
     const newPanel = {
@@ -92,7 +95,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       updated_at: new Date(),
     };
 
-    db.insert(panels).values(newPanel).run();
+    await db.insert(panels).values(newPanel);
 
     return NextResponse.json(newPanel, { status: 201 });
   } catch (err) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/index';
+import { ensureDbSchema } from '@/db/bootstrap';
 import { tabMeta } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 
@@ -8,12 +9,14 @@ type Params = { params: Promise<{ panelId: string }> };
 // GET /api/tab-meta/[panelId]
 export async function GET(_req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
+    await ensureDbSchema();
     const { panelId } = await params;
-    const row = db
+    const rows = await db
       .select()
       .from(tabMeta)
       .where(eq(tabMeta.panel_id, panelId))
-      .get();
+      .limit(1);
+    const row = rows[0];
     return NextResponse.json(row ?? null);
   } catch (err) {
     console.error('[GET /api/tab-meta/:id]', err);
@@ -25,6 +28,7 @@ export async function GET(_req: NextRequest, { params }: Params): Promise<NextRe
 // Body: { icon?: string; label?: string; shortcut?: number }
 export async function PUT(req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
+    await ensureDbSchema();
     const { panelId } = await params;
     const body = await req.json() as { icon?: string; label?: string; shortcut?: number };
 
@@ -35,10 +39,9 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
       shortcut: body.shortcut ?? null,
     };
 
-    db.insert(tabMeta)
+    await db.insert(tabMeta)
       .values(row)
-      .onConflictDoUpdate({ target: tabMeta.panel_id, set: row })
-      .run();
+      .onConflictDoUpdate({ target: tabMeta.panel_id, set: row });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

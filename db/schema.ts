@@ -1,25 +1,23 @@
 import {
-  sqliteTable,
+  pgTable,
   text,
   integer,
-} from 'drizzle-orm/sqlite-core';
+  timestamp,
+  serial,
+} from 'drizzle-orm/pg-core';
 
 // ─── 1. panels ───────────────────────────────────────────────────────────────
-export const panels = sqliteTable('panels', {
+export const panels = pgTable('panels', {
   panel_id:   text('panel_id').primaryKey(),
   name:       text('name').notNull(),
   position:   integer('position').notNull().default(0),
   version:    text('version').notNull().default('1.0.0'),
-  created_at: integer('created_at', { mode: 'timestamp_ms' })
-                .notNull()
-                .$defaultFn(() => new Date()),
-  updated_at: integer('updated_at', { mode: 'timestamp_ms' })
-                .notNull()
-                .$defaultFn(() => new Date()),
+  created_at: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  updated_at: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
 // ─── 2. panel_components ─────────────────────────────────────────────────────
-export const panelComponents = sqliteTable('panel_components', {
+export const panelComponents = pgTable('panel_components', {
   instance_id:  text('instance_id').primaryKey(),
   panel_id:     text('panel_id')
                   .notNull()
@@ -32,16 +30,12 @@ export const panelComponents = sqliteTable('panel_components', {
   rect_h:       integer('rect_h').notNull().default(8),
   front_props:  text('front_props').notNull().default('{}'),
   position:     integer('position').notNull().default(0),
-  created_at:   integer('created_at', { mode: 'timestamp_ms' })
-                  .notNull()
-                  .$defaultFn(() => new Date()),
-  updated_at:   integer('updated_at', { mode: 'timestamp_ms' })
-                  .notNull()
-                  .$defaultFn(() => new Date()),
+  created_at:   timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  updated_at:   timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
 // ─── 3. instance_configs ─────────────────────────────────────────────────────
-export const instanceConfigs = sqliteTable('instance_configs', {
+export const instanceConfigs = pgTable('instance_configs', {
   instance_id:        text('instance_id')
                         .primaryKey()
                         .references(() => panelComponents.instance_id, { onDelete: 'cascade' }),
@@ -57,21 +51,17 @@ export const instanceConfigs = sqliteTable('instance_configs', {
   proc_retries:       integer('proc_retries'),
   proc_backoff:       text('proc_backoff'),
   proc_error_mode:    text('proc_error_mode'),
-  updated_at:         integer('updated_at', { mode: 'timestamp_ms' })
-                        .notNull()
-                        .$defaultFn(() => new Date()),
+  updated_at:         timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
 // ─── 4. installed_components ─────────────────────────────────────────────────
-export const installedComponents = sqliteTable('installed_components', {
+export const installedComponents = pgTable('installed_components', {
   component_id: text('component_id').primaryKey(),
-  installed_at: integer('installed_at', { mode: 'timestamp_ms' })
-                  .notNull()
-                  .$defaultFn(() => new Date()),
+  installed_at: timestamp('installed_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
 // ─── 5. tab_meta ─────────────────────────────────────────────────────────────
-export const tabMeta = sqliteTable('tab_meta', {
+export const tabMeta = pgTable('tab_meta', {
   panel_id: text('panel_id')
               .primaryKey()
               .references(() => panels.panel_id, { onDelete: 'cascade' }),
@@ -81,18 +71,16 @@ export const tabMeta = sqliteTable('tab_meta', {
 });
 
 // ─── 6. panel_settings ───────────────────────────────────────────────────────
-export const panelSettings = sqliteTable('panel_settings', {
+export const panelSettings = pgTable('panel_settings', {
   panel_id:    text('panel_id')
                  .primaryKey()
                  .references(() => panels.panel_id, { onDelete: 'cascade' }),
   settings:    text('settings').notNull().default('{}'),
-  updated_at:  integer('updated_at', { mode: 'timestamp_ms' })
-                 .notNull()
-                 .$defaultFn(() => new Date()),
+  updated_at:  timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
 // ─── 7. chat_messages ────────────────────────────────────────────────────────
-export const chatMessages = sqliteTable('chat_messages', {
+export const chatMessages = pgTable('chat_messages', {
   id:          text('id').primaryKey(),
   session_id:  text('session_id').notNull(),
   panel_id:    text('panel_id'),
@@ -101,29 +89,23 @@ export const chatMessages = sqliteTable('chat_messages', {
   content:     text('content').notNull(),
   model_used:  text('model_used'),
   latency_ms:  integer('latency_ms'),
-  created_at:  integer('created_at', { mode: 'timestamp_ms' })
-                 .notNull()
-                 .$defaultFn(() => new Date()),
+  created_at:  timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
 // ─── 8. app_settings ─────────────────────────────────────────────────────────
-export const appSettings = sqliteTable('app_settings', {
+export const appSettings = pgTable('app_settings', {
   key:        text('key').primaryKey(),
   value:      text('value').notNull(),
-  updated_at: integer('updated_at', { mode: 'timestamp_ms' })
-                .notNull()
-                .$defaultFn(() => new Date()),
+  updated_at: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
 // ─── 9. service_status_log ───────────────────────────────────────────────────
-export const serviceStatusLog = sqliteTable('service_status_log', {
-  id:           integer('id', { mode: 'number' }).primaryKey({ autoIncrement: true }),
+export const serviceStatusLog = pgTable('service_status_log', {
+  id:           serial('id').primaryKey(),
   service_name: text('service_name').notNull(),
   status:       text('status').notNull(),
   latency_ms:   integer('latency_ms'),
-  recorded_at:  integer('recorded_at', { mode: 'timestamp_ms' })
-                  .notNull()
-                  .$defaultFn(() => new Date()),
+  recorded_at:  timestamp('recorded_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
 // ─── Inferred types ───────────────────────────────────────────────────────────

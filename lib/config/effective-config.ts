@@ -108,8 +108,8 @@ function resolveBindingFromLayer(
   return null;
 }
 
-export function loadAppComponentDefaults(): JsonRecord {
-  const rows = db.select().from(appSettings).all();
+export async function loadAppComponentDefaults(): Promise<JsonRecord> {
+  const rows = await db.select().from(appSettings);
   const allSettings = Object.fromEntries(
     rows.map((r) => {
       try {
@@ -124,30 +124,30 @@ export function loadAppComponentDefaults(): JsonRecord {
   return isPlainObject(defaults) ? defaults : {};
 }
 
-export function loadPanelSettings(panelId: string): JsonRecord {
-  const row = db
+export async function loadPanelSettings(panelId: string): Promise<JsonRecord> {
+  const rows = await db
     .select()
     .from(panelSettings)
     .where(eq(panelSettings.panel_id, panelId))
-    .get();
-
-  return parseJsonObject(row?.settings);
+    .limit(1);
+  return parseJsonObject(rows[0]?.settings);
 }
 
-export function loadInstanceSettings(instanceId: string): JsonRecord {
-  const row = db
+export async function loadInstanceSettings(instanceId: string): Promise<JsonRecord> {
+  const rows = await db
     .select()
     .from(instanceConfigs)
     .where(eq(instanceConfigs.instance_id, instanceId))
-    .get();
+    .limit(1);
 
-  const componentRow = db
+  const componentRows = await db
     .select({ front_props: panelComponents.front_props })
     .from(panelComponents)
     .where(eq(panelComponents.instance_id, instanceId))
-    .get();
+    .limit(1);
 
-  const frontProps = parseJsonObject(componentRow?.front_props);
+  const frontProps = parseJsonObject(componentRows[0]?.front_props);
+  const row = rows[0];
   if (!row) return frontProps;
 
   return {
@@ -167,8 +167,8 @@ export function loadInstanceSettings(instanceId: string): JsonRecord {
   };
 }
 
-export function resolveEffectiveConfig(instanceId: string): EffectiveConfigResult | null {
-  const instanceRef = db
+export async function resolveEffectiveConfig(instanceId: string): Promise<EffectiveConfigResult | null> {
+  const refs = await db
     .select({
       instance_id: panelComponents.instance_id,
       panel_id: panelComponents.panel_id,
@@ -176,13 +176,14 @@ export function resolveEffectiveConfig(instanceId: string): EffectiveConfigResul
     })
     .from(panelComponents)
     .where(eq(panelComponents.instance_id, instanceId))
-    .get();
+    .limit(1);
 
+  const instanceRef = refs[0];
   if (!instanceRef) return null;
 
-  const appLayer = loadAppComponentDefaults();
-  const panelLayer = loadPanelSettings(instanceRef.panel_id);
-  const instanceLayer = loadInstanceSettings(instanceRef.instance_id);
+  const appLayer = await loadAppComponentDefaults();
+  const panelLayer = await loadPanelSettings(instanceRef.panel_id);
+  const instanceLayer = await loadInstanceSettings(instanceRef.instance_id);
 
   const effective = deepMerge(deepMerge(appLayer, panelLayer), instanceLayer);
   const manifest = MOCK_COMPONENTS.find((c) => c.component_id === instanceRef.component_id);

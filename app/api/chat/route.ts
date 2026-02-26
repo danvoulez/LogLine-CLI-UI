@@ -1,22 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/index';
+import { ensureDbSchema } from '@/db/bootstrap';
 import { chatMessages } from '@/db/schema';
 import { eq, asc } from 'drizzle-orm';
 
 // GET /api/chat?session_id=...
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
+    await ensureDbSchema();
     const sessionId = req.nextUrl.searchParams.get('session_id');
     if (!sessionId) {
       return NextResponse.json({ error: 'session_id required' }, { status: 400 });
     }
 
-    const rows = db
+    const rows = await db
       .select()
       .from(chatMessages)
       .where(eq(chatMessages.session_id, sessionId))
       .orderBy(asc(chatMessages.created_at))
-      .all();
+      ;
 
     return NextResponse.json(rows);
   } catch (err) {
@@ -29,6 +31,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 // Body: { session_id, role, content, panel_id?, instance_id?, model_used?, latency_ms? }
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
+    await ensureDbSchema();
     const body = await req.json() as {
       session_id:   string;
       role:         'user' | 'assistant';
@@ -51,7 +54,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       created_at:  new Date(),
     };
 
-    db.insert(chatMessages).values(row).run();
+    await db.insert(chatMessages).values(row);
     return NextResponse.json(row, { status: 201 });
   } catch (err) {
     console.error('[POST /api/chat]', err);

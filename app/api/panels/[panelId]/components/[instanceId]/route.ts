@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/index';
+import { ensureDbSchema } from '@/db/bootstrap';
 import { panelComponents } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { MOCK_COMPONENTS } from '@/mocks/ublx-mocks';
@@ -21,14 +22,16 @@ const patchComponentSchema = z.object({
 // Body: { rect?: { x, y, w, h }; front_props?: Record<string, unknown> }
 export async function PATCH(req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
+    await ensureDbSchema();
     const { instanceId } = await params;
     const body = patchComponentSchema.parse(await req.json());
 
-    const current = db
+    const rows = await db
       .select()
       .from(panelComponents)
       .where(eq(panelComponents.instance_id, instanceId))
-      .get();
+      .limit(1);
+    const current = rows[0];
 
     if (!current) {
       return NextResponse.json({ error: 'Component instance not found' }, { status: 404 });
@@ -59,10 +62,9 @@ export async function PATCH(req: NextRequest, { params }: Params): Promise<NextR
       updates.front_props = JSON.stringify(body.front_props);
     }
 
-    db.update(panelComponents)
+    await db.update(panelComponents)
       .set(updates)
-      .where(eq(panelComponents.instance_id, instanceId))
-      .run();
+      .where(eq(panelComponents.instance_id, instanceId));
 
     return NextResponse.json({ ok: true });
   } catch (err) {
@@ -78,10 +80,9 @@ export async function PATCH(req: NextRequest, { params }: Params): Promise<NextR
 // Also cascades to instance_configs via FK
 export async function DELETE(_req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
+    await ensureDbSchema();
     const { instanceId } = await params;
-    db.delete(panelComponents)
-      .where(eq(panelComponents.instance_id, instanceId))
-      .run();
+    await db.delete(panelComponents).where(eq(panelComponents.instance_id, instanceId));
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[DELETE /api/panels/:id/components/:iid]', err);

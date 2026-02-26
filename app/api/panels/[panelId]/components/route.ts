@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/index';
+import { ensureDbSchema } from '@/db/bootstrap';
 import { panelComponents } from '@/db/schema';
 import { eq, asc } from 'drizzle-orm';
 import { MOCK_COMPONENTS } from '@/mocks/ublx-mocks';
@@ -19,13 +20,14 @@ const addComponentSchema = z.object({
 // GET /api/panels/[panelId]/components
 export async function GET(_req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
+    await ensureDbSchema();
     const { panelId } = await params;
-    const rows = db
+    const rows = await db
       .select()
       .from(panelComponents)
       .where(eq(panelComponents.panel_id, panelId))
       .orderBy(asc(panelComponents.position))
-      .all();
+      ;
 
     const result = rows.map((c) => {
       const def = MOCK_COMPONENTS.find((m) => m.component_id === c.component_id);
@@ -56,6 +58,7 @@ export async function GET(_req: NextRequest, { params }: Params): Promise<NextRe
 // Body: { componentId: string }
 export async function POST(req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
+    await ensureDbSchema();
     const { panelId } = await params;
     const body = addComponentSchema.parse(await req.json());
     const def = MOCK_COMPONENTS.find((c) => c.component_id === body.componentId);
@@ -64,11 +67,11 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       return NextResponse.json({ error: 'Unknown componentId' }, { status: 400 });
     }
 
-    const existing = db
+    const existing = await db
       .select()
       .from(panelComponents)
       .where(eq(panelComponents.panel_id, panelId))
-      .all();
+      ;
 
     const allowed = resolveAllowedPresetIds(def);
     const defaultPreset = resolveDefaultPresetId(def);
@@ -103,7 +106,7 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
       updated_at:   new Date(),
     };
 
-    db.insert(panelComponents).values(newComp).run();
+    await db.insert(panelComponents).values(newComp);
 
     return NextResponse.json({
       instance_id:  newComp.instance_id,

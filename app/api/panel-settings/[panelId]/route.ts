@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/index';
+import { ensureDbSchema } from '@/db/bootstrap';
 import { panelSettings } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -11,12 +12,14 @@ const panelSettingsSchema = z.record(z.string(), z.unknown());
 // GET /api/panel-settings/[panelId]
 export async function GET(_req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
+    await ensureDbSchema();
     const { panelId } = await params;
-    const row = db
+    const rows = await db
       .select()
       .from(panelSettings)
       .where(eq(panelSettings.panel_id, panelId))
-      .get();
+      .limit(1);
+    const row = rows[0];
 
     return NextResponse.json({
       panel_id: panelId,
@@ -32,6 +35,7 @@ export async function GET(_req: NextRequest, { params }: Params): Promise<NextRe
 // Body: Record<string, unknown>
 export async function PUT(req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
+    await ensureDbSchema();
     const { panelId } = await params;
     const body = await req.json() as unknown;
     const parsed = panelSettingsSchema.parse(body);
@@ -42,10 +46,9 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
       updated_at: new Date(),
     };
 
-    db.insert(panelSettings)
+    await db.insert(panelSettings)
       .values(row)
-      .onConflictDoUpdate({ target: panelSettings.panel_id, set: row })
-      .run();
+      .onConflictDoUpdate({ target: panelSettings.panel_id, set: row });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

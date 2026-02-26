@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/index';
+import { ensureDbSchema } from '@/db/bootstrap';
 import { instanceConfigs } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 
@@ -8,12 +9,14 @@ type Params = { params: Promise<{ instanceId: string }> };
 // GET /api/instance-configs/[instanceId]
 export async function GET(_req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
+    await ensureDbSchema();
     const { instanceId } = await params;
-    const row = db
+    const rows = await db
       .select()
       .from(instanceConfigs)
       .where(eq(instanceConfigs.instance_id, instanceId))
-      .get();
+      .limit(1);
+    const row = rows[0];
 
     if (!row) return NextResponse.json(null);
 
@@ -30,6 +33,7 @@ export async function GET(_req: NextRequest, { params }: Params): Promise<NextRe
 // PUT /api/instance-configs/[instanceId] — upsert
 export async function PUT(req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
+    await ensureDbSchema();
     const { instanceId } = await params;
     const body = await req.json() as {
       source_hub?:         string;
@@ -63,10 +67,9 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
       updated_at:         new Date(),
     };
 
-    db.insert(instanceConfigs)
+    await db.insert(instanceConfigs)
       .values(row)
-      .onConflictDoUpdate({ target: instanceConfigs.instance_id, set: row })
-      .run();
+      .onConflictDoUpdate({ target: instanceConfigs.instance_id, set: row });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

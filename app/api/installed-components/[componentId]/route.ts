@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/index';
+import { ensureDbSchema } from '@/db/bootstrap';
 import { installedComponents } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 
@@ -8,10 +9,9 @@ type Params = { params: Promise<{ componentId: string }> };
 // DELETE /api/installed-components/[componentId]
 export async function DELETE(_req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
+    await ensureDbSchema();
     const { componentId } = await params;
-    db.delete(installedComponents)
-      .where(eq(installedComponents.component_id, componentId))
-      .run();
+    await db.delete(installedComponents).where(eq(installedComponents.component_id, componentId));
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[DELETE /api/installed-components/:id]', err);
