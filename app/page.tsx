@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useUIStore } from '@/stores/ui-store';
 import {
   usePanels,
+  useCreatePanel,
   usePanelSettings,
   useSavePanelSettings,
   useInstanceConfig,
@@ -591,8 +592,10 @@ function BackSettingsPanel({
 }
 
 export default function Page() {
-  const { activePanelIndex, selectedInstanceByPanel, setSelectedInstance } = useUIStore();
-  const { data: panels = [] } = usePanels();
+  const { activePanelIndex, selectedInstanceByPanel, setSelectedInstance, setActivePanelIndex } = useUIStore();
+  const panelsQuery = usePanels();
+  const { data: panels = [] } = panelsQuery;
+  const createPanel = useCreatePanel();
   const savePanelSettings = useSavePanelSettings();
   const saveInstanceConfig = useSaveInstanceConfig();
   const updateComponentFrontProps = useUpdateComponentFrontProps();
@@ -731,7 +734,50 @@ export default function Page() {
     );
   };
 
-  if (!activePanel) return null;
+  if (!activePanel) {
+    return (
+      <AppShell>
+        <div className="w-full h-full flex items-center justify-center">
+          <div className="w-full max-w-md rounded-lg border border-white/10 bg-[#2a2a2a] p-5 text-white/80">
+            <div className="text-sm font-semibold text-white/85">No tabs yet</div>
+            <div className="mt-1 text-xs text-white/55">
+              {panelsQuery.isError
+                ? `Could not load panels (${panelsQuery.error instanceof Error ? panelsQuery.error.message : 'unknown error'}).`
+                : 'Create your first tab to start composing components.'}
+            </div>
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  createPanel.mutate(
+                    { name: 'New Tab' },
+                    {
+                      onSuccess: () => {
+                        setActivePanelIndex(0);
+                      },
+                    }
+                  );
+                }}
+                disabled={createPanel.isPending}
+                className="rounded border border-white/20 bg-[#343434] px-3 py-1.5 text-[11px] font-semibold text-white/85 hover:bg-[#3a3a3a] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {createPanel.isPending ? 'Creating...' : 'Create first tab'}
+              </button>
+              {panelsQuery.isError && (
+                <button
+                  type="button"
+                  onClick={() => panelsQuery.refetch()}
+                  className="rounded border border-white/15 bg-[#2d2d2d] px-3 py-1.5 text-[11px] text-white/70 hover:bg-[#333]"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
 
   const panelSettingsData = panelSettings.data?.settings ?? {};
   const effectiveData = effectiveConfig.data?.effective ?? {};

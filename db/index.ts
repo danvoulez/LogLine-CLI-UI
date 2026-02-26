@@ -4,8 +4,10 @@ import * as schema from './schema';
 import path from 'path';
 import fs from 'fs';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const DB_PATH  = path.join(DATA_DIR, 'ublx.db');
+const explicitDbPath = process.env.UBLX_DB_PATH;
+const isVercel = !!process.env.VERCEL;
+const DATA_DIR = isVercel ? '/tmp/ublx-data' : path.join(process.cwd(), 'data');
+const DB_PATH  = explicitDbPath || path.join(DATA_DIR, 'ublx.db');
 
 // Ensure data/ directory exists on first boot
 if (!fs.existsSync(DATA_DIR)) {
