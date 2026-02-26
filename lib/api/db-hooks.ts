@@ -184,6 +184,26 @@ export function useUpdateComponentFrontProps() {
   });
 }
 
+export function useUpdateComponentRect() {
+  const qc = useQueryClient();
+  return useMutation<
+    { ok: boolean },
+    Error,
+    { panelId: string; instanceId: string; rect: { x: number; y: number; w: number; h: number } }
+  >({
+    mutationFn: ({ panelId, instanceId, rect }) =>
+      apiFetch(`/api/panels/${panelId}/components/${instanceId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ rect }),
+      }),
+    onSuccess: (_data, { panelId, instanceId }) => {
+      qc.invalidateQueries({ queryKey: QUERY_KEYS.panels });
+      qc.invalidateQueries({ queryKey: QUERY_KEYS.panelComponents(panelId) });
+      qc.invalidateQueries({ queryKey: QUERY_KEYS.effectiveConfig(instanceId) });
+    },
+  });
+}
+
 // ── Instance config ───────────────────────────────────────────────────────────
 export function useInstanceConfig(instanceId: string) {
   return useQuery({

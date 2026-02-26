@@ -23,9 +23,11 @@ import { MOCK_COMPONENTS } from '@/mocks/ublx-mocks';
 interface ComponentRendererProps {
   instance: PanelComponentInstance;
   panelId: string;
+  onMoveStart?: (instanceId: string, e: React.MouseEvent) => void;
+  onResizeStart?: (instanceId: string, e: React.MouseEvent) => void;
 }
 
-export function ComponentRenderer({ instance, panelId }: ComponentRendererProps) {
+export function ComponentRenderer({ instance, panelId, onMoveStart, onResizeStart }: ComponentRendererProps) {
   const removeComponent = useRemoveComponent();
   const effectiveConfig = useEffectiveConfig(instance.instance_id);
   const selectedInstanceByPanel = useUIStore((state) => state.selectedInstanceByPanel);
@@ -171,6 +173,18 @@ export function ComponentRenderer({ instance, panelId }: ComponentRendererProps)
           <span className="text-[9px] font-medium truncate max-w-[120px]">{title}</span>
         </div>
         <div className="inline-flex items-center gap-1">
+          {onMoveStart && (
+            <button
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                onMoveStart(instance.instance_id, e);
+              }}
+              className="p-1.5 bg-[#2f2f2f]/90 hover:bg-[#3a3a3a] rounded border border-white/10 text-white/60 hover:text-white/90 cursor-move"
+              title="Drag to move"
+            >
+              <Activity size={11} />
+            </button>
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -197,6 +211,16 @@ export function ComponentRenderer({ instance, panelId }: ComponentRendererProps)
       </div>
 
       {renderComponent()}
+      {onResizeStart && (
+        <button
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            onResizeStart(instance.instance_id, e);
+          }}
+          className="absolute bottom-1 right-1 z-40 h-3 w-3 rounded-sm border border-white/20 bg-[#2f2f2f]/90 text-white/60 hover:text-white/90 cursor-nwse-resize opacity-0 group-hover/comp:opacity-100 transition-opacity"
+          title="Drag to resize"
+        />
+      )}
     </div>
   );
 }
