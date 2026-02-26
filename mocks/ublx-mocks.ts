@@ -109,6 +109,20 @@ export const MOCK_COMPONENTS: ComponentManifest[] = [
     limits: { min_w: 12, min_h: 10, max_w: 32, max_h: 24 }
   },
   {
+    component_id: 'billing-daily',
+    name: 'Billing Daily',
+    version: '1.0.0',
+    frontend_entry: 'BillingDaily',
+    permissions: ['network'],
+    optional_binding_tags: [
+      'backend:llm_gateway:url',
+      'secret:llm_gateway:admin',
+    ],
+    allowed_size_presets: ['M', 'L', 'WIDE'],
+    default_size_preset: 'L',
+    limits: { min_w: 8, min_h: 6, max_w: 24, max_h: 20 }
+  },
+  {
     component_id: 'secret-field',
     name: 'Secret Field',
     version: '1.0.0',

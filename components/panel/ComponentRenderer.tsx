@@ -13,6 +13,7 @@ import { ComponentStore } from '../component-catalog/ComponentStore';
 import { ChatAI } from '../component-catalog/ChatAI';
 import { SecretField } from '../component-catalog/SecretField';
 import { ObservabilityHub } from '../component-catalog/ObservabilityHub';
+import { BillingDaily } from '../component-catalog/BillingDaily';
 
 import { useEffectiveConfig, useRemoveComponent } from '@/lib/api/db-hooks';
 import { Trash2 } from 'lucide-react';
@@ -108,6 +109,14 @@ export function ComponentRenderer({ instance, panelId }: ComponentRendererProps)
       case 'observability-hub':
         return (
           <ObservabilityHub
+            effective={effective}
+            bindings={bindings}
+            missing_required_tags={missingRequiredTags}
+          />
+        );
+      case 'billing-daily':
+        return (
+          <BillingDaily
             effective={effective}
             bindings={bindings}
             missing_required_tags={missingRequiredTags}
