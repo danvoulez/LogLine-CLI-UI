@@ -7,6 +7,18 @@ import {
 } from '@tanstack/react-query';
 import type { PanelManifest, PanelComponentInstance } from '@/types/ublx';
 
+type ChatRow = {
+  id: string;
+  session_id: string;
+  panel_id: string | null;
+  instance_id: string | null;
+  role: 'user' | 'assistant';
+  content: string;
+  model_used: string | null;
+  latency_ms: number | null;
+  created_at: string;
+};
+
 // ── Internal fetch helper ─────────────────────────────────────────────────────
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -236,10 +248,10 @@ export function useEffectiveConfig(instanceId: string) {
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
 export function useChatHistory(sessionId: string) {
-  return useQuery({
+  return useQuery<ChatRow[]>({
     queryKey: QUERY_KEYS.chatHistory(sessionId),
     queryFn:  () =>
-      apiFetch(`/api/chat?session_id=${encodeURIComponent(sessionId)}`),
+      apiFetch<ChatRow[]>(`/api/chat?session_id=${encodeURIComponent(sessionId)}`),
     enabled: !!sessionId,
   });
 }
@@ -348,6 +360,7 @@ export function useDaemonEvents(since?: string) {
       const q = since ? `?since=${encodeURIComponent(since)}` : '';
       return apiFetch(`/api/logline/v1/events${q}`);
     },
+    refetchInterval: 20_000,
   });
 }
 
