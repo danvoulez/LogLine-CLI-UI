@@ -72,6 +72,9 @@ function parseTagBindings(layer: JsonRecord): Record<string, JsonValue> {
   maybe('llm:api_key', 'llm_api_key');
   maybe('secret:api', 'api_key');
   maybe('secret:llm', 'llm_api_key');
+  maybe('backend:llm_gateway:url', 'llm_gateway_base_url');
+  maybe('secret:llm_gateway:key', 'llm_gateway_api_key');
+  maybe('secret:llm_gateway:admin', 'llm_gateway_admin_key');
   maybe('transport:webhook', 'webhook_url');
   maybe('transport:websocket', 'websocket_url');
   maybe('transport:sse', 'sse_url');

@@ -28,6 +28,9 @@ type ErrorMode = 'RETRY' | 'STOP' | 'CONTINUE';
 type MainSettingsDraft = {
   api_key: string;
   llm_api_key: string;
+  llm_gateway_base_url: string;
+  llm_gateway_api_key: string;
+  llm_gateway_admin_key: string;
   webhook_url: string;
   websocket_url: string;
   sse_url: string;
@@ -50,11 +53,17 @@ function BackSettingsPanel({
   initialComponentFrontProps,
   initialTabApiKey,
   initialTabLlmApiKey,
+  initialTabLlmGatewayBaseUrl,
+  initialTabLlmGatewayApiKey,
+  initialTabLlmGatewayAdminKey,
   initialTabWebhookUrl,
   initialTabWebsocketUrl,
   initialTabSseUrl,
   initialMainApiKey,
   initialMainLlmApiKey,
+  initialMainLlmGatewayBaseUrl,
+  initialMainLlmGatewayApiKey,
+  initialMainLlmGatewayAdminKey,
   initialMainWebhookUrl,
   initialMainWebsocketUrl,
   initialMainSseUrl,
@@ -81,11 +90,17 @@ function BackSettingsPanel({
   initialComponentFrontProps: Record<string, unknown>;
   initialTabApiKey: string;
   initialTabLlmApiKey: string;
+  initialTabLlmGatewayBaseUrl: string;
+  initialTabLlmGatewayApiKey: string;
+  initialTabLlmGatewayAdminKey: string;
   initialTabWebhookUrl: string;
   initialTabWebsocketUrl: string;
   initialTabSseUrl: string;
   initialMainApiKey: string;
   initialMainLlmApiKey: string;
+  initialMainLlmGatewayBaseUrl: string;
+  initialMainLlmGatewayApiKey: string;
+  initialMainLlmGatewayAdminKey: string;
   initialMainWebhookUrl: string;
   initialMainWebsocketUrl: string;
   initialMainSseUrl: string;
@@ -107,6 +122,9 @@ function BackSettingsPanel({
     proc_error_mode: ErrorMode;
     api_key: string;
     llm_api_key: string;
+    llm_gateway_base_url: string;
+    llm_gateway_api_key: string;
+    llm_gateway_admin_key: string;
     webhook_url: string;
     websocket_url: string;
     sse_url: string;
@@ -120,11 +138,17 @@ function BackSettingsPanel({
   const [componentErrorMode, setComponentErrorMode] = useState<ErrorMode>(initialComponentErrorMode);
   const [tabApiKey, setTabApiKey] = useState(initialTabApiKey);
   const [tabLlmApiKey, setTabLlmApiKey] = useState(initialTabLlmApiKey);
+  const [tabLlmGatewayBaseUrl, setTabLlmGatewayBaseUrl] = useState(initialTabLlmGatewayBaseUrl);
+  const [tabLlmGatewayApiKey, setTabLlmGatewayApiKey] = useState(initialTabLlmGatewayApiKey);
+  const [tabLlmGatewayAdminKey, setTabLlmGatewayAdminKey] = useState(initialTabLlmGatewayAdminKey);
   const [tabWebhookUrl, setTabWebhookUrl] = useState(initialTabWebhookUrl);
   const [tabWebsocketUrl, setTabWebsocketUrl] = useState(initialTabWebsocketUrl);
   const [tabSseUrl, setTabSseUrl] = useState(initialTabSseUrl);
   const [mainApiKey, setMainApiKey] = useState(initialMainApiKey);
   const [mainLlmApiKey, setMainLlmApiKey] = useState(initialMainLlmApiKey);
+  const [mainLlmGatewayBaseUrl, setMainLlmGatewayBaseUrl] = useState(initialMainLlmGatewayBaseUrl);
+  const [mainLlmGatewayApiKey, setMainLlmGatewayApiKey] = useState(initialMainLlmGatewayApiKey);
+  const [mainLlmGatewayAdminKey, setMainLlmGatewayAdminKey] = useState(initialMainLlmGatewayAdminKey);
   const [mainWebhookUrl, setMainWebhookUrl] = useState(initialMainWebhookUrl);
   const [mainWebsocketUrl, setMainWebsocketUrl] = useState(initialMainWebsocketUrl);
   const [mainSseUrl, setMainSseUrl] = useState(initialMainSseUrl);
@@ -230,6 +254,18 @@ function BackSettingsPanel({
             <input value={mainLlmApiKey} onChange={(e) => setMainLlmApiKey(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
           </label>
           <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">llm_gateway_base_url</span>
+            <input value={mainLlmGatewayBaseUrl} onChange={(e) => setMainLlmGatewayBaseUrl(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">llm_gateway_api_key</span>
+            <input value={mainLlmGatewayApiKey} onChange={(e) => setMainLlmGatewayApiKey(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block md:col-span-2">
+            <span className="text-[10px] text-white/45 mb-1 block">llm_gateway_admin_key</span>
+            <input value={mainLlmGatewayAdminKey} onChange={(e) => setMainLlmGatewayAdminKey(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block">
             <span className="text-[10px] text-white/45 mb-1 block">webhook_url</span>
             <input value={mainWebhookUrl} onChange={(e) => setMainWebhookUrl(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
           </label>
@@ -248,6 +284,9 @@ function BackSettingsPanel({
             onSaveMain({
               api_key: mainApiKey,
               llm_api_key: mainLlmApiKey,
+              llm_gateway_base_url: mainLlmGatewayBaseUrl,
+              llm_gateway_api_key: mainLlmGatewayApiKey,
+              llm_gateway_admin_key: mainLlmGatewayAdminKey,
               webhook_url: mainWebhookUrl,
               websocket_url: mainWebsocketUrl,
               sse_url: mainSseUrl,
@@ -306,6 +345,9 @@ function BackSettingsPanel({
               proc_error_mode: tabErrorMode,
               api_key: tabApiKey,
               llm_api_key: tabLlmApiKey,
+              llm_gateway_base_url: tabLlmGatewayBaseUrl,
+              llm_gateway_api_key: tabLlmGatewayApiKey,
+              llm_gateway_admin_key: tabLlmGatewayAdminKey,
               webhook_url: tabWebhookUrl,
               websocket_url: tabWebsocketUrl,
               sse_url: tabSseUrl,
@@ -321,6 +363,18 @@ function BackSettingsPanel({
           <label className="block">
             <span className="text-[10px] text-white/45 mb-1 block">llm_api_key</span>
             <input value={tabLlmApiKey} onChange={(e) => setTabLlmApiKey(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">llm_gateway_base_url</span>
+            <input value={tabLlmGatewayBaseUrl} onChange={(e) => setTabLlmGatewayBaseUrl(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">llm_gateway_api_key</span>
+            <input value={tabLlmGatewayApiKey} onChange={(e) => setTabLlmGatewayApiKey(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block md:col-span-2">
+            <span className="text-[10px] text-white/45 mb-1 block">llm_gateway_admin_key</span>
+            <input value={tabLlmGatewayAdminKey} onChange={(e) => setTabLlmGatewayAdminKey(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
           </label>
           <label className="block">
             <span className="text-[10px] text-white/45 mb-1 block">webhook_url</span>
@@ -634,6 +688,9 @@ export default function Page() {
     proc_error_mode: ErrorMode;
     api_key: string;
     llm_api_key: string;
+    llm_gateway_base_url: string;
+    llm_gateway_api_key: string;
+    llm_gateway_admin_key: string;
     webhook_url: string;
     websocket_url: string;
     sse_url: string;
@@ -648,6 +705,9 @@ export default function Page() {
           proc_error_mode: draft.proc_error_mode,
           api_key: draft.api_key,
           llm_api_key: draft.llm_api_key,
+          llm_gateway_base_url: draft.llm_gateway_base_url,
+          llm_gateway_api_key: draft.llm_gateway_api_key,
+          llm_gateway_admin_key: draft.llm_gateway_admin_key,
           webhook_url: draft.webhook_url,
           websocket_url: draft.websocket_url,
           sse_url: draft.sse_url,
@@ -714,6 +774,9 @@ export default function Page() {
       ...appComponentDefaults,
       api_key: draft.api_key,
       llm_api_key: draft.llm_api_key,
+      llm_gateway_base_url: draft.llm_gateway_base_url,
+      llm_gateway_api_key: draft.llm_gateway_api_key,
+      llm_gateway_admin_key: draft.llm_gateway_admin_key,
       webhook_url: draft.webhook_url,
       websocket_url: draft.websocket_url,
       sse_url: draft.sse_url,
@@ -722,6 +785,9 @@ export default function Page() {
         'secret:api': draft.api_key,
         'secret:llm': draft.llm_api_key,
         'llm:api_key': draft.llm_api_key,
+        'backend:llm_gateway:url': draft.llm_gateway_base_url,
+        'secret:llm_gateway:key': draft.llm_gateway_api_key,
+        'secret:llm_gateway:admin': draft.llm_gateway_admin_key,
         'transport:webhook': draft.webhook_url,
         'transport:websocket': draft.websocket_url,
         'transport:sse': draft.sse_url,
@@ -823,11 +889,17 @@ export default function Page() {
                   initialComponentFrontProps={(selectedInstance?.front_props ?? {}) as Record<string, unknown>}
                   initialTabApiKey={typeof panelSettingsData.api_key === 'string' ? panelSettingsData.api_key : ''}
                   initialTabLlmApiKey={typeof panelSettingsData.llm_api_key === 'string' ? panelSettingsData.llm_api_key : ''}
+                  initialTabLlmGatewayBaseUrl={typeof panelSettingsData.llm_gateway_base_url === 'string' ? panelSettingsData.llm_gateway_base_url : ''}
+                  initialTabLlmGatewayApiKey={typeof panelSettingsData.llm_gateway_api_key === 'string' ? panelSettingsData.llm_gateway_api_key : ''}
+                  initialTabLlmGatewayAdminKey={typeof panelSettingsData.llm_gateway_admin_key === 'string' ? panelSettingsData.llm_gateway_admin_key : ''}
                   initialTabWebhookUrl={typeof panelSettingsData.webhook_url === 'string' ? panelSettingsData.webhook_url : ''}
                   initialTabWebsocketUrl={typeof panelSettingsData.websocket_url === 'string' ? panelSettingsData.websocket_url : ''}
                   initialTabSseUrl={typeof panelSettingsData.sse_url === 'string' ? panelSettingsData.sse_url : ''}
                   initialMainApiKey={typeof appComponentDefaults.api_key === 'string' ? appComponentDefaults.api_key : ''}
                   initialMainLlmApiKey={typeof appComponentDefaults.llm_api_key === 'string' ? appComponentDefaults.llm_api_key : ''}
+                  initialMainLlmGatewayBaseUrl={typeof appComponentDefaults.llm_gateway_base_url === 'string' ? appComponentDefaults.llm_gateway_base_url : ''}
+                  initialMainLlmGatewayApiKey={typeof appComponentDefaults.llm_gateway_api_key === 'string' ? appComponentDefaults.llm_gateway_api_key : ''}
+                  initialMainLlmGatewayAdminKey={typeof appComponentDefaults.llm_gateway_admin_key === 'string' ? appComponentDefaults.llm_gateway_admin_key : ''}
                   initialMainWebhookUrl={typeof appComponentDefaults.webhook_url === 'string' ? appComponentDefaults.webhook_url : ''}
                   initialMainWebsocketUrl={typeof appComponentDefaults.websocket_url === 'string' ? appComponentDefaults.websocket_url : ''}
                   initialMainSseUrl={typeof appComponentDefaults.sse_url === 'string' ? appComponentDefaults.sse_url : ''}

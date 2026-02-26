@@ -79,7 +79,14 @@ export const MOCK_COMPONENTS: ComponentManifest[] = [
     frontend_entry: 'ChatAI',
     permissions: ['llm'],
     required_binding_tags: ['llm:api_key'],
-    optional_binding_tags: ['llm:provider', 'transport:sse', 'transport:webhook', 'transport:websocket'],
+    optional_binding_tags: [
+      'llm:provider',
+      'backend:llm_gateway:url',
+      'secret:llm_gateway:key',
+      'transport:sse',
+      'transport:webhook',
+      'transport:websocket',
+    ],
     allowed_size_presets: ['L', 'XL', 'WIDE'],
     default_size_preset: 'L',
     limits: { min_w: 8, min_h: 12, max_w: 24, max_h: 24 }
@@ -90,7 +97,13 @@ export const MOCK_COMPONENTS: ComponentManifest[] = [
     version: '1.0.0',
     frontend_entry: 'ObservabilityHub',
     permissions: ['network'],
-    optional_binding_tags: ['transport:sse', 'transport:websocket', 'transport:webhook'],
+    optional_binding_tags: [
+      'backend:llm_gateway:url',
+      'secret:llm_gateway:admin',
+      'transport:sse',
+      'transport:websocket',
+      'transport:webhook',
+    ],
     allowed_size_presets: ['L', 'XL', 'WIDE'],
     default_size_preset: 'WIDE',
     limits: { min_w: 12, min_h: 10, max_w: 32, max_h: 24 }
