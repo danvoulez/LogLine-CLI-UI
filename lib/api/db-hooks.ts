@@ -19,11 +19,21 @@ type ChatRow = {
   created_at: string;
 };
 
+function resolveWorkspaceId(): string {
+  if (typeof window === 'undefined') return 'default';
+  const fromStorage = window.localStorage.getItem('ublx_workspace_id')?.trim();
+  return fromStorage || 'default';
+}
+
 // ── Internal fetch helper ─────────────────────────────────────────────────────
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
+  const workspaceId = resolveWorkspaceId();
+  const mergedHeaders = new Headers(options?.headers);
+  if (!mergedHeaders.has('Content-Type')) mergedHeaders.set('Content-Type', 'application/json');
+  mergedHeaders.set('x-workspace-id', workspaceId);
   const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers: mergedHeaders,
   });
   if (!res.ok) {
     const text = await res.text();
@@ -36,10 +46,12 @@ async function gatewayFetchJson<T>(
   path: string,
   opts: { baseUrl: string; token?: string; method?: string; body?: unknown; search?: string }
 ): Promise<T> {
+  const workspaceId = resolveWorkspaceId();
   const res = await fetch(`/api/llm-gateway${path}${opts.search ?? ''}`, {
     method: opts.method ?? 'GET',
     headers: {
       'Content-Type': 'application/json',
+      'x-workspace-id': workspaceId,
       'x-llm-gateway-base-url': opts.baseUrl,
       ...(opts.token ? { authorization: opts.token.startsWith('Bearer ') ? opts.token : `Bearer ${opts.token}` } : {}),
     },
@@ -57,8 +69,10 @@ async function gatewayFetchText(
   path: string,
   opts: { baseUrl: string; token?: string; search?: string }
 ): Promise<string> {
+  const workspaceId = resolveWorkspaceId();
   const res = await fetch(`/api/llm-gateway${path}${opts.search ?? ''}`, {
     headers: {
+      'x-workspace-id': workspaceId,
       'x-llm-gateway-base-url': opts.baseUrl,
       ...(opts.token ? { authorization: opts.token.startsWith('Bearer ') ? opts.token : `Bearer ${opts.token}` } : {}),
     },

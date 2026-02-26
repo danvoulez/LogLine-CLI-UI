@@ -9,7 +9,7 @@ cd "/Users/ubl-ops/UBLX App"
 ```
 
 From this folder, you have two systems:
-- Next.js app (UI + API + SQLite)
+- Next.js app (UI + API + Postgres via `DATABASE_URL`)
 - `logline` Rust workspace (CLI + daemon/API)
 
 ## 2) Run the UI App (what you use day-to-day)
@@ -80,8 +80,21 @@ Key settings inheritance implementation:
 - Panel settings: `app/api/panel-settings/[panelId]/route.ts`
 - Instance settings: `app/api/instance-configs/[instanceId]/route.ts`
 - App settings: `app/api/settings/route.ts`
+- Gateway proxy (allowlisted): `app/api/llm-gateway/[...path]/route.ts`
 
-## 5) How to Add New Logic
+## 5) LLM Gateway + Onboarding Basics
+
+UI side:
+- Save `llm_gateway_base_url` and `llm_gateway_api_key` in App Settings.
+- Those are applied through tag bindings and consumed by Chat/Observability widgets.
+- Proxy route `/api/llm-gateway/*` only forwards to allowlisted hosts.
+
+Agent side (LAB256-Agent):
+- Agent uses `POST /v1/onboarding/sync` with `CLI_JWT` to get/rotate app key.
+- Issued key is cached locally and used to call `/v1/chat/completions`.
+- If onboarding fails, cached key is used as fallback.
+
+## 6) How to Add New Logic
 
 ### A) Add a new visual component (UI component)
 
@@ -121,10 +134,9 @@ cd "/Users/ubl-ops/UBLX App/logline"
 cargo check
 ```
 
-## 6) Quick Mental Model
+## 7) Quick Mental Model
 
 - UI is the operator surface.
 - `app/api/*` is the app-side logic bridge.
 - `logline` daemon/CLI is runtime logic and remote-control layer.
 - Config priority is designed as app defaults -> panel settings -> instance settings.
-

@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/index';
 import { ensureDbSchema } from '@/db/bootstrap';
 import { chatMessages } from '@/db/schema';
-import { eq, asc } from 'drizzle-orm';
+import { eq, asc, and } from 'drizzle-orm';
+import { resolveWorkspaceId } from '@/lib/auth/workspace';
 
 // GET /api/chat?session_id=...
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     await ensureDbSchema();
+    const workspaceId = resolveWorkspaceId(req);
     const sessionId = req.nextUrl.searchParams.get('session_id');
     if (!sessionId) {
       return NextResponse.json({ error: 'session_id required' }, { status: 400 });
@@ -16,7 +18,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const rows = await db
       .select()
       .from(chatMessages)
-      .where(eq(chatMessages.session_id, sessionId))
+      .where(and(eq(chatMessages.workspace_id, workspaceId), eq(chatMessages.session_id, sessionId)))
       .orderBy(asc(chatMessages.created_at))
       ;
 
@@ -32,6 +34,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     await ensureDbSchema();
+    const workspaceId = resolveWorkspaceId(req);
     const body = await req.json() as {
       session_id:   string;
       role:         'user' | 'assistant';
@@ -44,6 +47,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const row = {
       id:          crypto.randomUUID(),
+      workspace_id: workspaceId,
       session_id:  body.session_id,
       panel_id:    body.panel_id    ?? null,
       instance_id: body.instance_id ?? null,

@@ -1,11 +1,64 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/db/index';
+import { ensureDbSchema } from '@/db/bootstrap';
+import { appSettings } from '@/db/schema';
+import { eq } from 'drizzle-orm';
+import { resolveWorkspaceId, toScopedKey } from '@/lib/auth/workspace';
 
 type Params = { params: Promise<{ path: string[] }> };
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
-function resolveBaseUrl(req: NextRequest): string | null {
-  const fromHeader = req.headers.get('x-llm-gateway-base-url')?.trim();
-  if (fromHeader) return fromHeader.replace(/\/$/, '');
+function parseAllowedHosts(): Set<string> {
+  const fromEnv = (process.env.LLM_GATEWAY_ALLOWED_HOSTS ?? '')
+    .split(',')
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean);
+  const out = new Set<string>(fromEnv);
+  out.add('api.logline.world');
+  if (process.env.NODE_ENV !== 'production') {
+    out.add('localhost');
+    out.add('127.0.0.1');
+  }
+  return out;
+}
+
+async function readWorkspaceGatewayUrl(req: NextRequest): Promise<string | null> {
+  const workspaceId = resolveWorkspaceId(req);
+  const key = toScopedKey(workspaceId, 'component_defaults');
+  const rows = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
+  if (rows.length !== 1) return null;
+  try {
+    const parsed = JSON.parse(rows[0].value) as Record<string, unknown>;
+    return typeof parsed.llm_gateway_base_url === 'string' ? parsed.llm_gateway_base_url.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeAndValidateBaseUrl(baseUrlRaw: string, allowedHosts: Set<string>): string | null {
+  const baseUrl = baseUrlRaw.trim();
+  if (!baseUrl) return null;
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+    if (!allowedHosts.has(parsed.hostname.toLowerCase())) return null;
+    return `${parsed.origin}${parsed.pathname}`.replace(/\/$/, '');
+  } catch {
+    return null;
+  }
+}
+
+async function resolveBaseUrl(req: NextRequest): Promise<string | null> {
+  const allowedHosts = parseAllowedHosts();
+  const candidates = [
+    req.headers.get('x-llm-gateway-base-url') ?? '',
+    await readWorkspaceGatewayUrl(req) ?? '',
+    process.env.LLM_GATEWAY_BASE_URL ?? '',
+  ];
+  for (const candidate of candidates) {
+    const valid = normalizeAndValidateBaseUrl(candidate, allowedHosts);
+    if (valid) return valid;
+  }
   return null;
 }
 
@@ -18,9 +71,16 @@ function resolveAuth(req: NextRequest): string | null {
 }
 
 async function proxy(req: NextRequest, { params }: Params, method: Method): Promise<NextResponse> {
-  const baseUrl = resolveBaseUrl(req);
+  await ensureDbSchema();
+  const baseUrl = await resolveBaseUrl(req);
   if (!baseUrl) {
-    return NextResponse.json({ error: 'Missing x-llm-gateway-base-url header' }, { status: 400 });
+    return NextResponse.json(
+      {
+        error: 'LLM gateway base URL is missing or not allowed',
+        hint: 'Use app settings llm_gateway_base_url or LLM_GATEWAY_BASE_URL and allowlisted host',
+      },
+      { status: 400 }
+    );
   }
 
   const { path } = await params;

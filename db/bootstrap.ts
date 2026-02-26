@@ -82,6 +82,7 @@ export async function ensureDbSchema(): Promise<void> {
       await sql`
         create table if not exists chat_messages (
           id text primary key,
+          workspace_id text not null default 'default',
           session_id text not null,
           panel_id text,
           instance_id text,
@@ -92,6 +93,7 @@ export async function ensureDbSchema(): Promise<void> {
           created_at timestamptz not null default now()
         );
       `;
+      await sql`alter table chat_messages add column if not exists workspace_id text not null default 'default';`;
 
       await sql`
         create table if not exists app_settings (
@@ -112,6 +114,7 @@ export async function ensureDbSchema(): Promise<void> {
       `;
 
       await sql`create index if not exists idx_panels_workspace_position on panels (workspace_id, position);`;
+      await sql`create index if not exists idx_chat_workspace_session_created on chat_messages (workspace_id, session_id, created_at);`;
     })();
   }
 

@@ -83,6 +83,7 @@ export const panelSettings = pgTable('panel_settings', {
 // ─── 7. chat_messages ────────────────────────────────────────────────────────
 export const chatMessages = pgTable('chat_messages', {
   id:          text('id').primaryKey(),
+  workspace_id: text('workspace_id').notNull().default('default'),
   session_id:  text('session_id').notNull(),
   panel_id:    text('panel_id'),
   instance_id: text('instance_id'),
