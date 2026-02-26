@@ -32,6 +32,44 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function gatewayFetchJson<T>(
+  path: string,
+  opts: { baseUrl: string; token?: string; method?: string; body?: unknown; search?: string }
+): Promise<T> {
+  const res = await fetch(`/api/llm-gateway${path}${opts.search ?? ''}`, {
+    method: opts.method ?? 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-llm-gateway-base-url': opts.baseUrl,
+      ...(opts.token ? { authorization: opts.token.startsWith('Bearer ') ? opts.token : `Bearer ${opts.token}` } : {}),
+    },
+    body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Gateway ${res.status}: ${text}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+async function gatewayFetchText(
+  path: string,
+  opts: { baseUrl: string; token?: string; search?: string }
+): Promise<string> {
+  const res = await fetch(`/api/llm-gateway${path}${opts.search ?? ''}`, {
+    headers: {
+      'x-llm-gateway-base-url': opts.baseUrl,
+      ...(opts.token ? { authorization: opts.token.startsWith('Bearer ') ? opts.token : `Bearer ${opts.token}` } : {}),
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Gateway ${res.status}: ${text}`);
+  }
+  return res.text();
+}
+
 // ── Centralized query keys ────────────────────────────────────────────────────
 export const QUERY_KEYS = {
   panels:              ['panels']                                    as const,
@@ -44,6 +82,10 @@ export const QUERY_KEYS = {
   chatHistory:         (sessionId: string) => ['chat', sessionId]   as const,
   settings:            ['settings']                                  as const,
   statusLog:           ['status-log']                                as const,
+  gatewayFuel:         (baseUrl: string) => ['gateway', 'fuel', baseUrl] as const,
+  gatewayFuelDaily:    (baseUrl: string) => ['gateway', 'fuel-daily', baseUrl] as const,
+  gatewayUsageDaily:   (baseUrl: string, day: string, limit: number) => ['gateway', 'usage-daily', baseUrl, day, limit] as const,
+  gatewayMetrics:      (baseUrl: string) => ['gateway', 'metrics', baseUrl] as const,
 };
 
 // ── Panels ────────────────────────────────────────────────────────────────────
@@ -298,6 +340,69 @@ export function useSendChatMessage() {
       }),
     onSuccess: (_data, { session_id }) =>
       qc.invalidateQueries({ queryKey: QUERY_KEYS.chatHistory(session_id) }),
+  });
+}
+
+export function useGatewayChatCompletion() {
+  return useMutation<
+    Record<string, unknown>,
+    Error,
+    {
+      baseUrl: string;
+      token: string;
+      model: string;
+      messages: { role: 'user' | 'assistant' | 'system'; content: string }[];
+    }
+  >({
+    mutationFn: ({ baseUrl, token, model, messages }) =>
+      gatewayFetchJson('/v1/chat/completions', {
+        baseUrl,
+        token,
+        method: 'POST',
+        body: { model, messages },
+      }),
+  });
+}
+
+export function useGatewayFuel(baseUrl?: string, token?: string) {
+  return useQuery<Record<string, unknown>>({
+    queryKey: QUERY_KEYS.gatewayFuel(baseUrl ?? ''),
+    queryFn: () => gatewayFetchJson('/v1/fuel', { baseUrl: baseUrl ?? '', token }),
+    enabled: !!baseUrl,
+    refetchInterval: 20_000,
+  });
+}
+
+export function useGatewayFuelDaily(baseUrl?: string, token?: string) {
+  return useQuery<Record<string, unknown>>({
+    queryKey: QUERY_KEYS.gatewayFuelDaily(baseUrl ?? ''),
+    queryFn: () => gatewayFetchJson('/v1/fuel/daily', { baseUrl: baseUrl ?? '', token }),
+    enabled: !!baseUrl,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useGatewayUsageDaily(baseUrl?: string, adminToken?: string, day?: string, limit = 100) {
+  const resolvedDay = day || new Date().toISOString().slice(0, 10);
+  return useQuery<Record<string, unknown>>({
+    queryKey: QUERY_KEYS.gatewayUsageDaily(baseUrl ?? '', resolvedDay, limit),
+    queryFn: () =>
+      gatewayFetchJson('/v1/admin/usage/daily', {
+        baseUrl: baseUrl ?? '',
+        token: adminToken,
+        search: `?day=${encodeURIComponent(resolvedDay)}&limit=${limit}`,
+      }),
+    enabled: !!baseUrl && !!adminToken,
+    refetchInterval: 60_000,
+  });
+}
+
+export function useGatewayMetrics(baseUrl?: string, token?: string) {
+  return useQuery<string>({
+    queryKey: QUERY_KEYS.gatewayMetrics(baseUrl ?? ''),
+    queryFn: () => gatewayFetchText('/metrics', { baseUrl: baseUrl ?? '', token }),
+    enabled: !!baseUrl,
+    refetchInterval: 30_000,
   });
 }
 

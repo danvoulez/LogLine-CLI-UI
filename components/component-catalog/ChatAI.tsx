@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Send } from 'lucide-react';
-import { useChatHistory, useSendChatMessage } from '@/lib/api/db-hooks';
+import { useChatHistory, useSendChatMessage, useGatewayChatCompletion } from '@/lib/api/db-hooks';
 import { resolveBindingValue, resolveChatCascadeSettings } from '@/lib/config/component-settings';
 
 type ChatAIProps = {
@@ -19,6 +19,8 @@ export function ChatAI(props: ChatAIProps) {
   const bindings = props.bindings ?? {};
   const llmProvider = resolveBindingValue(bindings, ['llm:provider']) as string | undefined;
   const hasLlmApiKey = resolveBindingValue(bindings, ['llm:api_key']) !== undefined;
+  const gatewayBase = resolveBindingValue(bindings, ['backend:llm_gateway:url']) as string | undefined;
+  const gatewayToken = resolveBindingValue(bindings, ['secret:llm_gateway:key']) as string | undefined;
   const fallbackSession = useMemo(() => {
     const panel = props.panel_id ?? 'panel';
     const instance = props.instance_id ?? 'instance';
@@ -28,6 +30,7 @@ export function ChatAI(props: ChatAIProps) {
   const sessionId = props.session_id ?? chatSettings.session_id ?? fallbackSession;
   const history = useChatHistory(sessionId);
   const send = useSendChatMessage();
+  const gatewayChat = useGatewayChatCompletion();
   const [draft, setDraft] = useState('');
 
   const onSend = () => {
@@ -45,6 +48,54 @@ export function ChatAI(props: ChatAIProps) {
       {
         onSuccess: () => {
           setDraft('');
+          if (gatewayBase && gatewayToken) {
+            const pastMessages = (history.data ?? []).map((msg) => ({
+              role: msg.role,
+              content: msg.content,
+            })) as { role: 'user' | 'assistant'; content: string }[];
+
+            gatewayChat.mutate(
+              {
+                baseUrl: gatewayBase,
+                token: gatewayToken,
+                model: 'auto',
+                messages: [...pastMessages, { role: 'user', content }],
+              },
+              {
+                onSuccess: (resp) => {
+                  const choices = Array.isArray(resp.choices) ? (resp.choices as Record<string, unknown>[]) : [];
+                  const first = choices[0];
+                  const message = first?.message as Record<string, unknown> | undefined;
+                  const assistantText =
+                    typeof message?.content === 'string'
+                      ? message.content
+                      : `${chatSettings.assistant_prefix}: ${content}`;
+
+                  send.mutate({
+                    session_id: sessionId,
+                    panel_id: props.panel_id,
+                    instance_id: props.instance_id,
+                    role: 'assistant',
+                    content: assistantText,
+                    model_used: typeof resp.model === 'string' ? resp.model : undefined,
+                  });
+                },
+                onError: () => {
+                  if (chatSettings.auto_reply) {
+                    send.mutate({
+                      session_id: sessionId,
+                      panel_id: props.panel_id,
+                      instance_id: props.instance_id,
+                      role: 'assistant',
+                      content: `${chatSettings.assistant_prefix}: ${content}`,
+                    });
+                  }
+                },
+              }
+            );
+            return;
+          }
+
           if (chatSettings.auto_reply) {
             send.mutate({
               session_id: sessionId,
@@ -68,6 +119,10 @@ export function ChatAI(props: ChatAIProps) {
       <div className="mb-2 text-[8px] text-white/45 flex items-center justify-between">
         <span>provider: {llmProvider ?? '-'}</span>
         <span>llm key: {hasLlmApiKey ? 'bound' : 'missing'}</span>
+      </div>
+      <div className="mb-2 text-[8px] text-white/35 flex items-center justify-between">
+        <span>gateway: {gatewayBase ?? '-'}</span>
+        <span>mode: {gatewayBase && gatewayToken ? 'live' : 'local-fallback'}</span>
       </div>
       {props.missing_required_tags && props.missing_required_tags.length > 0 && (
         <div className="mb-2 p-1.5 rounded border border-amber-400/20 bg-amber-400/10 text-[9px] text-amber-200">

@@ -7,6 +7,10 @@ import {
   useDaemonRuntimeStatus,
   useDaemonWhoami,
   useDaemonEvents,
+  useGatewayFuel,
+  useGatewayFuelDaily,
+  useGatewayUsageDaily,
+  useGatewayMetrics,
 } from '@/lib/api/db-hooks';
 import { resolveBindingValue, resolveObservabilityCascadeSettings } from '@/lib/config/component-settings';
 
@@ -19,6 +23,16 @@ function tiny(value: unknown): string {
   } catch {
     return '-';
   }
+}
+
+function readNumber(obj: Record<string, unknown> | undefined, keys: string[]): string {
+  if (!obj) return '-';
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return '-';
 }
 
 type ObservabilityHubProps = {
@@ -38,6 +52,15 @@ export function ObservabilityHub({ effective, bindings, missing_required_tags }:
   const sse = resolveBindingValue(resolvedBindings, ['transport:sse']);
   const websocket = resolveBindingValue(resolvedBindings, ['transport:websocket']);
   const webhook = resolveBindingValue(resolvedBindings, ['transport:webhook']);
+  const gatewayBase = resolveBindingValue(resolvedBindings, ['backend:llm_gateway:url']) as string | undefined;
+  const gatewayToken = resolveBindingValue(resolvedBindings, ['secret:llm_gateway:key']) as string | undefined;
+  const gatewayAdminToken = resolveBindingValue(resolvedBindings, ['secret:llm_gateway:admin']) as string | undefined;
+
+  const fuel = useGatewayFuel(gatewayBase, gatewayToken);
+  const fuelDaily = useGatewayFuelDaily(gatewayBase, gatewayToken);
+  const usageDaily = useGatewayUsageDaily(gatewayBase, gatewayAdminToken);
+  const metrics = useGatewayMetrics(gatewayBase, gatewayToken);
+
   const eventLimit = obsSettings.event_limit;
   const kindContains = obsSettings.kind_contains;
   const eventRows = (events.data ?? [])
@@ -73,7 +96,38 @@ export function ObservabilityHub({ effective, bindings, missing_required_tags }:
       value: tiny(runtime.data?.queue_depth),
       tone: 'text-amber-300',
     },
+    {
+      label: 'Fuel Calls',
+      icon: Activity,
+      value: readNumber(fuel.data, ['calls_total', 'total_calls']),
+      tone: 'text-cyan-300',
+    },
+    {
+      label: 'Tokens',
+      icon: ListTree,
+      value: readNumber(fuel.data, ['tokens_total', 'total_tokens']),
+      tone: 'text-teal-300',
+    },
+    {
+      label: 'Daily Calls',
+      icon: Activity,
+      value: readNumber(fuelDaily.data, ['calls_total', 'total_calls']),
+      tone: 'text-indigo-300',
+    },
+    {
+      label: 'Usage Rows',
+      icon: ListTree,
+      value: Array.isArray((usageDaily.data as Record<string, unknown> | undefined)?.rows)
+        ? String(((usageDaily.data as Record<string, unknown>).rows as unknown[]).length)
+        : '-',
+      tone: 'text-fuchsia-300',
+    },
   ];
+
+  const metricsSample = (metrics.data ?? '')
+    .split('\n')
+    .filter((line) => line && !line.startsWith('#'))
+    .slice(0, 5);
 
   return (
     <div className="w-full h-full flex flex-col gap-2">
@@ -89,10 +143,24 @@ export function ObservabilityHub({ effective, bindings, missing_required_tags }:
         ))}
       </div>
       <div className="text-[8px] text-white/45 bg-white/[0.03] border border-white/10 rounded p-2">
+        <div>gateway: {tiny(gatewayBase)}</div>
         <div>sse: {tiny(sse)}</div>
         <div>websocket: {tiny(websocket)}</div>
         <div>webhook: {tiny(webhook)}</div>
       </div>
+      <div className="text-[8px] text-white/45 bg-white/[0.03] border border-white/10 rounded p-2 space-y-0.5">
+        <div>fuel status: {fuel.isError ? 'error' : fuel.isLoading ? 'loading' : 'ok'}</div>
+        <div>fuel daily status: {fuelDaily.isError ? 'error' : fuelDaily.isLoading ? 'loading' : 'ok'}</div>
+        <div>usage daily status: {usageDaily.isError ? 'error' : usageDaily.isLoading ? 'loading' : 'ok'}</div>
+        <div>metrics status: {metrics.isError ? 'error' : metrics.isLoading ? 'loading' : 'ok'}</div>
+      </div>
+      {metricsSample.length > 0 && (
+        <div className="text-[8px] text-white/45 bg-white/[0.03] border border-white/10 rounded p-2 font-mono space-y-0.5">
+          {metricsSample.map((line, idx) => (
+            <div key={`${line}-${idx}`} className="truncate">{line}</div>
+          ))}
+        </div>
+      )}
       {missing_required_tags && missing_required_tags.length > 0 && (
         <div className="p-1.5 rounded border border-amber-400/20 bg-amber-400/10 text-[9px] text-amber-200">
           Missing tags: {missing_required_tags.join(', ')}
