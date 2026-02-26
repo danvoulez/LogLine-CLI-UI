@@ -9,6 +9,10 @@ import {
   useInstanceConfig,
   useEffectiveConfig,
   useSaveInstanceConfig,
+  useDaemonRuntimeStatus,
+  useDaemonRunIntent,
+  useDaemonStopIntent,
+  useDaemonSelectProfile,
 } from '@/lib/api/db-hooks';
 import { AppShell } from '@/components/shell/AppShell';
 import { FlipPanel } from '@/components/panel/FlipPanel';
@@ -61,6 +65,69 @@ function BackSettingsPanel({
   const [tabErrorMode, setTabErrorMode] = useState<ErrorMode>(initialTabErrorMode);
   const [componentCommand, setComponentCommand] = useState(initialComponentCommand);
   const [componentErrorMode, setComponentErrorMode] = useState<ErrorMode>(initialComponentErrorMode);
+  const [intentType, setIntentType] = useState(initialComponentCommand || 'sync');
+  const [intentPayload, setIntentPayload] = useState('{}');
+  const [runIdToStop, setRunIdToStop] = useState('');
+  const [profileId, setProfileId] = useState('local');
+  const [runtimeFeedback, setRuntimeFeedback] = useState<string | null>(null);
+
+  const daemonStatus = useDaemonRuntimeStatus();
+  const runIntent = useDaemonRunIntent();
+  const stopIntent = useDaemonStopIntent();
+  const selectProfile = useDaemonSelectProfile();
+
+  const handleRunIntent = () => {
+    let payload: Record<string, string> = {};
+    try {
+      const parsed = JSON.parse(intentPayload) as Record<string, unknown>;
+      payload = Object.fromEntries(
+        Object.entries(parsed).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)])
+      );
+    } catch {
+      setRuntimeFeedback('Invalid payload JSON');
+      return;
+    }
+
+    runIntent.mutate(
+      { intent_type: intentType.trim(), payload },
+      {
+        onSuccess: (data) => {
+          const runId = typeof data.run_id === 'string' ? data.run_id : '';
+          if (runId) setRunIdToStop(runId);
+          setRuntimeFeedback(runId ? `Intent started: ${runId}` : 'Intent started');
+        },
+        onError: (error) => setRuntimeFeedback(error.message),
+      }
+    );
+  };
+
+  const handleStopIntent = () => {
+    if (!runIdToStop.trim()) {
+      setRuntimeFeedback('Provide a run_id to stop');
+      return;
+    }
+    stopIntent.mutate(
+      { run_id: runIdToStop.trim() },
+      {
+        onSuccess: () => setRuntimeFeedback(`Stop sent: ${runIdToStop.trim()}`),
+        onError: (error) => setRuntimeFeedback(error.message),
+      }
+    );
+  };
+
+  const handleSelectProfile = () => {
+    if (!profileId.trim()) {
+      setRuntimeFeedback('Provide a profile_id');
+      return;
+    }
+    selectProfile.mutate(
+      { profile_id: profileId.trim() },
+      {
+        onSuccess: () => setRuntimeFeedback(`Profile selected: ${profileId.trim()}`),
+        onError: (error) => setRuntimeFeedback(error.message),
+      }
+    );
+  };
 
   return (
     <div className="space-y-5 text-white/80">
@@ -177,6 +244,86 @@ function BackSettingsPanel({
             />
           </>
         )}
+      </section>
+
+      <section className="space-y-3 border border-white/10 bg-[#323232] rounded p-3">
+        <div className="flex items-center justify-between">
+          <h4 className="text-[10px] font-semibold tracking-wide text-white/70">Runtime Controls</h4>
+          <span className="text-[8px] font-mono text-white/35">
+            active_profile: {String(daemonStatus.data?.active_profile ?? '-')}
+          </span>
+        </div>
+
+        <label className="block">
+          <span className="text-[10px] text-white/45 mb-1 block">Intent Type</span>
+          <input
+            type="text"
+            value={intentType}
+            onChange={(e) => setIntentType(e.target.value)}
+            className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs focus:outline-none focus:border-white/30"
+          />
+        </label>
+
+        <label className="block">
+          <span className="text-[10px] text-white/45 mb-1 block">Intent Payload (JSON)</span>
+          <textarea
+            value={intentPayload}
+            onChange={(e) => setIntentPayload(e.target.value)}
+            rows={4}
+            className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs font-mono focus:outline-none focus:border-white/30"
+          />
+        </label>
+
+        <QuickAction
+          label={runIntent.isPending ? 'RUNNING...' : 'RUN INTENT'}
+          onClick={handleRunIntent}
+          variant="primary"
+          disabled={runIntent.isPending}
+        />
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">Stop Run ID</span>
+            <input
+              type="text"
+              value={runIdToStop}
+              onChange={(e) => setRunIdToStop(e.target.value)}
+              className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs focus:outline-none focus:border-white/30"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">Profile ID</span>
+            <input
+              type="text"
+              value={profileId}
+              onChange={(e) => setProfileId(e.target.value)}
+              className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs focus:outline-none focus:border-white/30"
+            />
+          </label>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <QuickAction
+            label={stopIntent.isPending ? 'STOPPING...' : 'STOP RUN'}
+            onClick={handleStopIntent}
+            variant="danger"
+            disabled={stopIntent.isPending}
+          />
+          <QuickAction
+            label={selectProfile.isPending ? 'SWITCHING...' : 'SELECT PROFILE'}
+            onClick={handleSelectProfile}
+            variant="secondary"
+            disabled={selectProfile.isPending}
+          />
+        </div>
+
+        <div className="text-[10px] border border-white/10 rounded p-2.5 bg-[#2a2a2a] space-y-1">
+          <div className="text-white/55">Runtime Snapshot</div>
+          <div className="text-white/35 font-mono">running_jobs: {String(daemonStatus.data?.running_jobs ?? '-')}</div>
+          <div className="text-white/35 font-mono">queue_depth: {String(daemonStatus.data?.queue_depth ?? '-')}</div>
+          {runtimeFeedback && <div className="text-blue-300 font-mono">{runtimeFeedback}</div>}
+        </div>
       </section>
     </div>
   );
