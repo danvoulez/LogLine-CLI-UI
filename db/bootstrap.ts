@@ -8,6 +8,7 @@ export async function ensureDbSchema(): Promise<void> {
       await sql`
         create table if not exists panels (
           panel_id text primary key,
+          workspace_id text not null default 'default',
           name text not null,
           position integer not null default 0,
           version text not null default '1.0.0',
@@ -15,6 +16,8 @@ export async function ensureDbSchema(): Promise<void> {
           updated_at timestamptz not null default now()
         );
       `;
+
+      await sql`alter table panels add column if not exists workspace_id text not null default 'default';`;
 
       await sql`
         create table if not exists panel_components (
@@ -107,6 +110,8 @@ export async function ensureDbSchema(): Promise<void> {
           recorded_at timestamptz not null default now()
         );
       `;
+
+      await sql`create index if not exists idx_panels_workspace_position on panels (workspace_id, position);`;
     })();
   }
 

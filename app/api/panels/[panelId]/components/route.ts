@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/index';
 import { ensureDbSchema } from '@/db/bootstrap';
-import { panelComponents } from '@/db/schema';
-import { eq, asc } from 'drizzle-orm';
+import { panelComponents, panels } from '@/db/schema';
+import { and, eq, asc } from 'drizzle-orm';
 import { MOCK_COMPONENTS } from '@/mocks/ublx-mocks';
 import { z } from 'zod';
 import {
@@ -11,6 +11,7 @@ import {
   resolveAllowedPresetIds,
   resolveDefaultPresetId,
 } from '@/lib/layout/grid-presets';
+import { resolveWorkspaceId } from '@/lib/auth/workspace';
 
 type Params = { params: Promise<{ panelId: string }> };
 const addComponentSchema = z.object({
@@ -21,7 +22,15 @@ const addComponentSchema = z.object({
 export async function GET(_req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
     await ensureDbSchema();
+    const workspaceId = resolveWorkspaceId(_req);
     const { panelId } = await params;
+    const panel = await db
+      .select({ panel_id: panels.panel_id })
+      .from(panels)
+      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId)))
+      .limit(1);
+    if (panel.length === 0) return NextResponse.json([]);
+
     const rows = await db
       .select()
       .from(panelComponents)
@@ -59,7 +68,17 @@ export async function GET(_req: NextRequest, { params }: Params): Promise<NextRe
 export async function POST(req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
     await ensureDbSchema();
+    const workspaceId = resolveWorkspaceId(req);
     const { panelId } = await params;
+    const panel = await db
+      .select({ panel_id: panels.panel_id })
+      .from(panels)
+      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId)))
+      .limit(1);
+    if (panel.length === 0) {
+      return NextResponse.json({ error: 'Panel not found in workspace' }, { status: 404 });
+    }
+
     const body = addComponentSchema.parse(await req.json());
     const def = MOCK_COMPONENTS.find((c) => c.component_id === body.componentId);
 

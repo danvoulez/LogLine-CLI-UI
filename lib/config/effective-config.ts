@@ -1,7 +1,7 @@
 import { db } from '@/db/index';
-import { appSettings, instanceConfigs, panelComponents, panelSettings } from '@/db/schema';
+import { appSettings, instanceConfigs, panelComponents, panelSettings, panels } from '@/db/schema';
 import { MOCK_COMPONENTS } from '@/mocks/ublx-mocks';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 type JsonPrimitive = string | number | boolean | null;
 type JsonValue = JsonPrimitive | JsonRecord | JsonValue[];
@@ -167,7 +167,7 @@ export async function loadInstanceSettings(instanceId: string): Promise<JsonReco
   };
 }
 
-export async function resolveEffectiveConfig(instanceId: string): Promise<EffectiveConfigResult | null> {
+export async function resolveEffectiveConfig(instanceId: string, workspaceId = 'default'): Promise<EffectiveConfigResult | null> {
   const refs = await db
     .select({
       instance_id: panelComponents.instance_id,
@@ -175,7 +175,8 @@ export async function resolveEffectiveConfig(instanceId: string): Promise<Effect
       component_id: panelComponents.component_id,
     })
     .from(panelComponents)
-    .where(eq(panelComponents.instance_id, instanceId))
+    .innerJoin(panels, eq(panelComponents.panel_id, panels.panel_id))
+    .where(and(eq(panelComponents.instance_id, instanceId), eq(panels.workspace_id, workspaceId)))
     .limit(1);
 
   const instanceRef = refs[0];

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/index';
 import { ensureDbSchema } from '@/db/bootstrap';
-import { instanceConfigs } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { instanceConfigs, panelComponents, panels } from '@/db/schema';
+import { and, eq } from 'drizzle-orm';
+import { resolveWorkspaceId } from '@/lib/auth/workspace';
 
 type Params = { params: Promise<{ instanceId: string }> };
 
@@ -10,7 +11,16 @@ type Params = { params: Promise<{ instanceId: string }> };
 export async function GET(_req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
     await ensureDbSchema();
+    const workspaceId = resolveWorkspaceId(_req);
     const { instanceId } = await params;
+    const ownership = await db
+      .select({ instance_id: panelComponents.instance_id })
+      .from(panelComponents)
+      .innerJoin(panels, eq(panelComponents.panel_id, panels.panel_id))
+      .where(and(eq(panelComponents.instance_id, instanceId), eq(panels.workspace_id, workspaceId)))
+      .limit(1);
+    if (ownership.length === 0) return NextResponse.json(null);
+
     const rows = await db
       .select()
       .from(instanceConfigs)
@@ -34,7 +44,18 @@ export async function GET(_req: NextRequest, { params }: Params): Promise<NextRe
 export async function PUT(req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
     await ensureDbSchema();
+    const workspaceId = resolveWorkspaceId(req);
     const { instanceId } = await params;
+    const ownership = await db
+      .select({ instance_id: panelComponents.instance_id })
+      .from(panelComponents)
+      .innerJoin(panels, eq(panelComponents.panel_id, panels.panel_id))
+      .where(and(eq(panelComponents.instance_id, instanceId), eq(panels.workspace_id, workspaceId)))
+      .limit(1);
+    if (ownership.length === 0) {
+      return NextResponse.json({ error: 'Instance not found in workspace' }, { status: 404 });
+    }
+
     const body = await req.json() as {
       source_hub?:         string;
       source_origin?:      string;

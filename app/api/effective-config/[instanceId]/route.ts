@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveEffectiveConfig } from '@/lib/config/effective-config';
 import { ensureDbSchema } from '@/db/bootstrap';
+import { resolveWorkspaceId } from '@/lib/auth/workspace';
 
 type Params = { params: Promise<{ instanceId: string }> };
 
@@ -8,8 +9,9 @@ type Params = { params: Promise<{ instanceId: string }> };
 export async function GET(_req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
     await ensureDbSchema();
+    const workspaceId = resolveWorkspaceId(_req);
     const { instanceId } = await params;
-    const resolved = await resolveEffectiveConfig(instanceId);
+    const resolved = await resolveEffectiveConfig(instanceId, workspaceId);
     if (!resolved) {
       return NextResponse.json({ error: 'Instance not found' }, { status: 404 });
     }

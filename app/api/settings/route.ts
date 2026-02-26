@@ -2,15 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/index';
 import { ensureDbSchema } from '@/db/bootstrap';
 import { appSettings } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { like } from 'drizzle-orm';
+import { resolveWorkspaceId, toScopedKey } from '@/lib/auth/workspace';
 
 // GET /api/settings
-export async function GET(): Promise<NextResponse> {
+export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     await ensureDbSchema();
-    const rows = await db.select().from(appSettings);
+    const workspaceId = resolveWorkspaceId(req);
+    const prefix = `ws:${workspaceId}:`;
+    const rows = await db
+      .select()
+      .from(appSettings)
+      .where(like(appSettings.key, `${prefix}%`));
     const result = Object.fromEntries(
-      rows.map((r) => [r.key, JSON.parse(r.value) as unknown])
+      rows.map((r) => [r.key.slice(prefix.length), JSON.parse(r.value) as unknown])
     );
     return NextResponse.json(result);
   } catch (err) {
@@ -24,9 +30,10 @@ export async function GET(): Promise<NextResponse> {
 export async function PATCH(req: NextRequest): Promise<NextResponse> {
   try {
     await ensureDbSchema();
+    const workspaceId = resolveWorkspaceId(req);
     const body = await req.json() as { key: string; value: unknown };
     const row = {
-      key:        body.key,
+      key:        toScopedKey(workspaceId, body.key),
       value:      JSON.stringify(body.value),
       updated_at: new Date(),
     };

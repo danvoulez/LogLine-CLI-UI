@@ -3,10 +3,11 @@ import { db } from '@/db/index';
 import { ensureDbSchema } from '@/db/bootstrap';
 import { panels, panelComponents } from '@/db/schema';
 import { seedDefaultData } from '@/db/seed';
-import { asc } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
 import { MOCK_COMPONENTS } from '@/mocks/ublx-mocks';
 import { normalizeRectToPresets, resolveAllowedPresetIds } from '@/lib/layout/grid-presets';
 import { z } from 'zod';
+import { resolveWorkspaceId } from '@/lib/auth/workspace';
 
 const createPanelSchema = z.object({
   name: z.string().trim().min(1).max(64).optional(),
@@ -15,21 +16,29 @@ const createPanelSchema = z.object({
 // GET /api/panels
 // Returns all panels ordered by position, each with their components array.
 // Seeds the database on first call if tables are empty.
-export async function GET(): Promise<NextResponse> {
+export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     await ensureDbSchema();
-    const existing = await db.select({ panel_id: panels.panel_id }).from(panels).limit(1);
-    if (existing.length === 0) await seedDefaultData();
+    const workspaceId = resolveWorkspaceId(req);
+    const existing = await db
+      .select({ panel_id: panels.panel_id })
+      .from(panels)
+      .where(eq(panels.workspace_id, workspaceId))
+      .limit(1);
+    if (existing.length === 0) await seedDefaultData(workspaceId);
 
     const allPanels = await db
       .select()
       .from(panels)
+      .where(eq(panels.workspace_id, workspaceId))
       .orderBy(asc(panels.position))
       ;
 
+    const panelIds = allPanels.map((p) => p.panel_id);
     const allComponents = await db
       .select()
       .from(panelComponents)
+      .where(panelIds.length > 0 ? inArray(panelComponents.panel_id, panelIds) : eq(panelComponents.panel_id, '__none__'))
       .orderBy(asc(panelComponents.position))
       ;
 
@@ -80,14 +89,16 @@ export async function GET(): Promise<NextResponse> {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     await ensureDbSchema();
+    const workspaceId = resolveWorkspaceId(req);
     const body = createPanelSchema.parse(await req.json());
     const name = body.name ?? 'New Tab';
 
-    const allPanels = await db.select().from(panels);
+    const allPanels = await db.select().from(panels).where(eq(panels.workspace_id, workspaceId));
     const maxPosition = allPanels.reduce((max, p) => Math.max(max, p.position), -1);
 
     const newPanel = {
       panel_id:   crypto.randomUUID(),
+      workspace_id: workspaceId,
       name,
       position:   maxPosition + 1,
       version:    '1.0.0',

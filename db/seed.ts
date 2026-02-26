@@ -6,19 +6,25 @@ import {
   resolveAllowedPresetIds,
   resolveDefaultPresetId,
 } from '@/lib/layout/grid-presets';
+import { eq } from 'drizzle-orm';
 
 const PANEL_ICONS: Record<string, string> = {
   home: 'Home',
   ops: 'Activity',
 };
 
-export async function seedDefaultData(): Promise<void> {
-  const existing = await db.select().from(panels).limit(1);
+export async function seedDefaultData(workspaceId = 'default'): Promise<void> {
+  const existing = await db
+    .select({ panel_id: panels.panel_id })
+    .from(panels)
+    .where(eq(panels.workspace_id, workspaceId))
+    .limit(1);
   if (existing.length > 0) return;
 
   await db.transaction(async (tx) => {
     const panelRows = MOCK_PANELS.map((p, idx) => ({
-      panel_id: p.panel_id,
+      panel_id: `${workspaceId}::${p.panel_id}`,
+      workspace_id: workspaceId,
       name: p.name,
       position: idx,
       version: p.version,
@@ -28,7 +34,7 @@ export async function seedDefaultData(): Promise<void> {
     await tx.insert(panels).values(panelRows);
 
     const tabMetaRows = MOCK_PANELS.map((p, idx) => ({
-      panel_id: p.panel_id,
+      panel_id: `${workspaceId}::${p.panel_id}`,
       icon: PANEL_ICONS[p.panel_id] ?? 'FileText',
       label: p.name,
       shortcut: idx + 1 <= 9 ? idx + 1 : null,
@@ -43,8 +49,8 @@ export async function seedDefaultData(): Promise<void> {
         const normalized = normalizeRectToPresets(c.rect, allowed, { cols: 32, rows: 24 }, preset);
 
         return {
-          instance_id: c.instance_id,
-          panel_id: p.panel_id,
+          instance_id: `${workspaceId}::${c.instance_id}`,
+          panel_id: `${workspaceId}::${p.panel_id}`,
           component_id: c.component_id,
           version: c.version,
           rect_x: normalized.rect.x,

@@ -9,6 +9,7 @@ import {
 // ─── 1. panels ───────────────────────────────────────────────────────────────
 export const panels = pgTable('panels', {
   panel_id:   text('panel_id').primaryKey(),
+  workspace_id: text('workspace_id').notNull().default('default'),
   name:       text('name').notNull(),
   position:   integer('position').notNull().default(0),
   version:    text('version').notNull().default('1.0.0'),

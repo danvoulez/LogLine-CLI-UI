@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/index';
 import { ensureDbSchema } from '@/db/bootstrap';
-import { panelComponents } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { panelComponents, panels } from '@/db/schema';
+import { and, eq } from 'drizzle-orm';
 import { MOCK_COMPONENTS } from '@/mocks/ublx-mocks';
 import { normalizeRectToPresets, resolveAllowedPresetIds, SizePresetId } from '@/lib/layout/grid-presets';
 import { z } from 'zod';
+import { resolveWorkspaceId } from '@/lib/auth/workspace';
 
 type Params = { params: Promise<{ panelId: string; instanceId: string }> };
 const patchComponentSchema = z.object({
@@ -23,13 +24,23 @@ const patchComponentSchema = z.object({
 export async function PATCH(req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
     await ensureDbSchema();
-    const { instanceId } = await params;
+    const workspaceId = resolveWorkspaceId(req);
+    const { panelId, instanceId } = await params;
+    const panel = await db
+      .select({ panel_id: panels.panel_id })
+      .from(panels)
+      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId)))
+      .limit(1);
+    if (panel.length === 0) {
+      return NextResponse.json({ error: 'Panel not found in workspace' }, { status: 404 });
+    }
+
     const body = patchComponentSchema.parse(await req.json());
 
     const rows = await db
       .select()
       .from(panelComponents)
-      .where(eq(panelComponents.instance_id, instanceId))
+      .where(and(eq(panelComponents.instance_id, instanceId), eq(panelComponents.panel_id, panelId)))
       .limit(1);
     const current = rows[0];
 
@@ -81,8 +92,20 @@ export async function PATCH(req: NextRequest, { params }: Params): Promise<NextR
 export async function DELETE(_req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
     await ensureDbSchema();
-    const { instanceId } = await params;
-    await db.delete(panelComponents).where(eq(panelComponents.instance_id, instanceId));
+    const workspaceId = resolveWorkspaceId(_req);
+    const { panelId, instanceId } = await params;
+    const panel = await db
+      .select({ panel_id: panels.panel_id })
+      .from(panels)
+      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId)))
+      .limit(1);
+    if (panel.length === 0) {
+      return NextResponse.json({ error: 'Panel not found in workspace' }, { status: 404 });
+    }
+
+    await db
+      .delete(panelComponents)
+      .where(and(eq(panelComponents.instance_id, instanceId), eq(panelComponents.panel_id, panelId)));
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[DELETE /api/panels/:id/components/:iid]', err);

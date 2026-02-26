@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db/index';
 import { ensureDbSchema } from '@/db/bootstrap';
 import { panels } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+import { resolveWorkspaceId } from '@/lib/auth/workspace';
 
 type Params = { params: Promise<{ panelId: string }> };
 
@@ -11,6 +12,7 @@ type Params = { params: Promise<{ panelId: string }> };
 export async function PATCH(req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
     await ensureDbSchema();
+    const workspaceId = resolveWorkspaceId(req);
     const { panelId } = await params;
     const body = await req.json() as { name?: string; position?: number };
 
@@ -18,7 +20,10 @@ export async function PATCH(req: NextRequest, { params }: Params): Promise<NextR
     if (body.name     !== undefined) updates.name     = body.name.trim();
     if (body.position !== undefined) updates.position = body.position;
 
-    await db.update(panels).set(updates).where(eq(panels.panel_id, panelId));
+    await db
+      .update(panels)
+      .set(updates)
+      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId)));
 
     return NextResponse.json({ ok: true });
   } catch (err) {
@@ -32,8 +37,11 @@ export async function PATCH(req: NextRequest, { params }: Params): Promise<NextR
 export async function DELETE(_req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
     await ensureDbSchema();
+    const workspaceId = resolveWorkspaceId(_req);
     const { panelId } = await params;
-    await db.delete(panels).where(eq(panels.panel_id, panelId));
+    await db
+      .delete(panels)
+      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId)));
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[DELETE /api/panels/:id]', err);
