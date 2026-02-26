@@ -27,6 +27,7 @@ export const MOCK_COMPONENTS: ComponentManifest[] = [
     version: '1.0.0',
     frontend_entry: 'LLMStatus',
     permissions: [],
+    optional_binding_tags: ['llm:api_key', 'llm:provider', 'transport:sse', 'transport:websocket'],
     allowed_size_presets: ['M', 'L', 'WIDE'],
     default_size_preset: 'WIDE',
     limits: { min_w: 6, min_h: 4, max_w: 16, max_h: 12 }
@@ -77,6 +78,8 @@ export const MOCK_COMPONENTS: ComponentManifest[] = [
     version: '1.0.0',
     frontend_entry: 'ChatAI',
     permissions: ['llm'],
+    required_binding_tags: ['llm:api_key'],
+    optional_binding_tags: ['llm:provider', 'transport:sse', 'transport:webhook', 'transport:websocket'],
     allowed_size_presets: ['L', 'XL', 'WIDE'],
     default_size_preset: 'L',
     limits: { min_w: 8, min_h: 12, max_w: 24, max_h: 24 }
@@ -87,6 +90,7 @@ export const MOCK_COMPONENTS: ComponentManifest[] = [
     version: '1.0.0',
     frontend_entry: 'ObservabilityHub',
     permissions: ['network'],
+    optional_binding_tags: ['transport:sse', 'transport:websocket', 'transport:webhook'],
     allowed_size_presets: ['L', 'XL', 'WIDE'],
     default_size_preset: 'WIDE',
     limits: { min_w: 12, min_h: 10, max_w: 32, max_h: 24 }
@@ -97,6 +101,7 @@ export const MOCK_COMPONENTS: ComponentManifest[] = [
     version: '1.0.0',
     frontend_entry: 'SecretField',
     permissions: ['secrets'],
+    optional_binding_tags: ['secret:api', 'secret:llm'],
     allowed_size_presets: ['S', 'M', 'WIDE'],
     default_size_preset: 'S',
     limits: { min_w: 4, min_h: 2, max_w: 12, max_h: 4 }

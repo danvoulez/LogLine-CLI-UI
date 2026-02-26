@@ -8,7 +8,7 @@ import {
   useDaemonWhoami,
   useDaemonEvents,
 } from '@/lib/api/db-hooks';
-import { resolveObservabilityCascadeSettings } from '@/lib/config/component-settings';
+import { resolveBindingValue, resolveObservabilityCascadeSettings } from '@/lib/config/component-settings';
 
 function tiny(value: unknown): string {
   if (value === null || value === undefined) return '-';
@@ -23,15 +23,21 @@ function tiny(value: unknown): string {
 
 type ObservabilityHubProps = {
   effective?: Record<string, unknown>;
+  bindings?: Record<string, unknown>;
+  missing_required_tags?: string[];
 };
 
-export function ObservabilityHub({ effective }: ObservabilityHubProps) {
+export function ObservabilityHub({ effective, bindings, missing_required_tags }: ObservabilityHubProps) {
   const health = useDaemonHealth();
   const runtime = useDaemonRuntimeStatus();
   const whoami = useDaemonWhoami();
   const events = useDaemonEvents();
 
   const obsSettings = resolveObservabilityCascadeSettings(effective ?? {});
+  const resolvedBindings = bindings ?? {};
+  const sse = resolveBindingValue(resolvedBindings, ['transport:sse']);
+  const websocket = resolveBindingValue(resolvedBindings, ['transport:websocket']);
+  const webhook = resolveBindingValue(resolvedBindings, ['transport:webhook']);
   const eventLimit = obsSettings.event_limit;
   const kindContains = obsSettings.kind_contains;
   const eventRows = (events.data ?? [])
@@ -82,6 +88,16 @@ export function ObservabilityHub({ effective }: ObservabilityHubProps) {
           </div>
         ))}
       </div>
+      <div className="text-[8px] text-white/45 bg-white/[0.03] border border-white/10 rounded p-2">
+        <div>sse: {tiny(sse)}</div>
+        <div>websocket: {tiny(websocket)}</div>
+        <div>webhook: {tiny(webhook)}</div>
+      </div>
+      {missing_required_tags && missing_required_tags.length > 0 && (
+        <div className="p-1.5 rounded border border-amber-400/20 bg-amber-400/10 text-[9px] text-amber-200">
+          Missing tags: {missing_required_tags.join(', ')}
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 bg-white/[0.03] border border-white/10 rounded p-2 flex flex-col">
         <div className="flex items-center justify-between mb-2">

@@ -249,12 +249,16 @@ export function useEffectiveConfig(instanceId: string) {
   return useQuery<{
     instance_id: string;
     panel_id: string;
+    component_id: string;
     layers: {
       app: Record<string, unknown>;
       panel: Record<string, unknown>;
       instance: Record<string, unknown>;
     };
     effective: Record<string, unknown>;
+    bindings: Record<string, unknown>;
+    binding_sources: Record<string, { source: 'instance' | 'panel' | 'app'; matched_tag: string }>;
+    missing_required_tags: string[];
   }>({
     queryKey: QUERY_KEYS.effectiveConfig(instanceId),
     queryFn:  () => apiFetch(`/api/effective-config/${instanceId}`),

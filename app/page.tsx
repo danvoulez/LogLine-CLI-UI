@@ -38,6 +38,11 @@ function BackSettingsPanel({
   initialComponentCommand,
   initialComponentErrorMode,
   initialComponentFrontProps,
+  initialTabApiKey,
+  initialTabLlmApiKey,
+  initialTabWebhookUrl,
+  initialTabWebsocketUrl,
+  initialTabSseUrl,
   effectivePreview,
   isSavingTab,
   isSavingComponent,
@@ -54,6 +59,11 @@ function BackSettingsPanel({
   initialComponentCommand: string;
   initialComponentErrorMode: ErrorMode;
   initialComponentFrontProps: Record<string, unknown>;
+  initialTabApiKey: string;
+  initialTabLlmApiKey: string;
+  initialTabWebhookUrl: string;
+  initialTabWebsocketUrl: string;
+  initialTabSseUrl: string;
   effectivePreview: {
     source_hub: string;
     proc_executor: string;
@@ -62,7 +72,15 @@ function BackSettingsPanel({
   isSavingTab: boolean;
   isSavingComponent: boolean;
   savedKey: 'tab' | 'component' | null;
-  onSaveTab: (draft: { source_hub: string; proc_error_mode: ErrorMode }) => void;
+  onSaveTab: (draft: {
+    source_hub: string;
+    proc_error_mode: ErrorMode;
+    api_key: string;
+    llm_api_key: string;
+    webhook_url: string;
+    websocket_url: string;
+    sse_url: string;
+  }) => void;
   onSaveComponent: (draft: { proc_command: string; proc_error_mode: ErrorMode }) => void;
   onSaveComponentFrontProps: (nextFrontProps: Record<string, unknown>) => void;
 }) {
@@ -70,6 +88,11 @@ function BackSettingsPanel({
   const [tabErrorMode, setTabErrorMode] = useState<ErrorMode>(initialTabErrorMode);
   const [componentCommand, setComponentCommand] = useState(initialComponentCommand);
   const [componentErrorMode, setComponentErrorMode] = useState<ErrorMode>(initialComponentErrorMode);
+  const [tabApiKey, setTabApiKey] = useState(initialTabApiKey);
+  const [tabLlmApiKey, setTabLlmApiKey] = useState(initialTabLlmApiKey);
+  const [tabWebhookUrl, setTabWebhookUrl] = useState(initialTabWebhookUrl);
+  const [tabWebsocketUrl, setTabWebsocketUrl] = useState(initialTabWebsocketUrl);
+  const [tabSseUrl, setTabSseUrl] = useState(initialTabSseUrl);
   const [intentType, setIntentType] = useState(initialComponentCommand || 'sync');
   const [intentPayload, setIntentPayload] = useState('{}');
   const [runIdToStop, setRunIdToStop] = useState('');
@@ -199,9 +222,41 @@ function BackSettingsPanel({
 
         <QuickAction
           label={savedKey === 'tab' ? 'TAB SAVED' : isSavingTab ? 'SAVING...' : 'SAVE TAB DEFAULTS'}
-          onClick={() => onSaveTab({ source_hub: tabSourceHub, proc_error_mode: tabErrorMode })}
+          onClick={() =>
+            onSaveTab({
+              source_hub: tabSourceHub,
+              proc_error_mode: tabErrorMode,
+              api_key: tabApiKey,
+              llm_api_key: tabLlmApiKey,
+              webhook_url: tabWebhookUrl,
+              websocket_url: tabWebsocketUrl,
+              sse_url: tabSseUrl,
+            })
+          }
           variant="secondary"
         />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">api_key</span>
+            <input value={tabApiKey} onChange={(e) => setTabApiKey(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">llm_api_key</span>
+            <input value={tabLlmApiKey} onChange={(e) => setTabLlmApiKey(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">webhook_url</span>
+            <input value={tabWebhookUrl} onChange={(e) => setTabWebhookUrl(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">websocket_url</span>
+            <input value={tabWebsocketUrl} onChange={(e) => setTabWebsocketUrl(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block md:col-span-2">
+            <span className="text-[10px] text-white/45 mb-1 block">sse_url</span>
+            <input value={tabSseUrl} onChange={(e) => setTabSseUrl(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+        </div>
       </section>
 
       <section className="space-y-3 border border-white/10 bg-[#323232] rounded p-3">
@@ -470,7 +525,15 @@ export default function Page() {
     setTimeout(() => setSavedKey(null), 1800);
   };
 
-  const handleSaveTabSettings = (draft: { source_hub: string; proc_error_mode: ErrorMode }) => {
+  const handleSaveTabSettings = (draft: {
+    source_hub: string;
+    proc_error_mode: ErrorMode;
+    api_key: string;
+    llm_api_key: string;
+    webhook_url: string;
+    websocket_url: string;
+    sse_url: string;
+  }) => {
     if (!activePanel) return;
     savePanelSettings.mutate(
       {
@@ -479,6 +542,11 @@ export default function Page() {
           source_hub: draft.source_hub,
           proc_executor: 'UBLX_NATIVE_V1',
           proc_error_mode: draft.proc_error_mode,
+          api_key: draft.api_key,
+          llm_api_key: draft.llm_api_key,
+          webhook_url: draft.webhook_url,
+          websocket_url: draft.websocket_url,
+          sse_url: draft.sse_url,
         },
       },
       { onSuccess: () => showSaved('tab') }
@@ -566,6 +634,11 @@ export default function Page() {
                   }
                   initialComponentErrorMode={asErrorMode(effectiveData.proc_error_mode, 'RETRY')}
                   initialComponentFrontProps={(selectedInstance?.front_props ?? {}) as Record<string, unknown>}
+                  initialTabApiKey={typeof panelSettingsData.api_key === 'string' ? panelSettingsData.api_key : ''}
+                  initialTabLlmApiKey={typeof panelSettingsData.llm_api_key === 'string' ? panelSettingsData.llm_api_key : ''}
+                  initialTabWebhookUrl={typeof panelSettingsData.webhook_url === 'string' ? panelSettingsData.webhook_url : ''}
+                  initialTabWebsocketUrl={typeof panelSettingsData.websocket_url === 'string' ? panelSettingsData.websocket_url : ''}
+                  initialTabSseUrl={typeof panelSettingsData.sse_url === 'string' ? panelSettingsData.sse_url : ''}
                   effectivePreview={{
                     source_hub:
                       typeof effectiveData.source_hub === 'string' ? effectiveData.source_hub : '-',

@@ -3,17 +3,22 @@
 import React, { useMemo, useState } from 'react';
 import { Send } from 'lucide-react';
 import { useChatHistory, useSendChatMessage } from '@/lib/api/db-hooks';
-import { resolveChatCascadeSettings } from '@/lib/config/component-settings';
+import { resolveBindingValue, resolveChatCascadeSettings } from '@/lib/config/component-settings';
 
 type ChatAIProps = {
   session_id?: string;
   panel_id?: string;
   instance_id?: string;
   effective?: Record<string, unknown>;
+  bindings?: Record<string, unknown>;
+  missing_required_tags?: string[];
 };
 
 export function ChatAI(props: ChatAIProps) {
   const chatSettings = resolveChatCascadeSettings(props.effective ?? {});
+  const bindings = props.bindings ?? {};
+  const llmProvider = resolveBindingValue(bindings, ['llm:provider']) as string | undefined;
+  const hasLlmApiKey = resolveBindingValue(bindings, ['llm:api_key']) !== undefined;
   const fallbackSession = useMemo(() => {
     const panel = props.panel_id ?? 'panel';
     const instance = props.instance_id ?? 'instance';
@@ -60,6 +65,15 @@ export function ChatAI(props: ChatAIProps) {
         <h4 className="text-[9px] text-white/60 uppercase tracking-widest">Chat Session</h4>
         <span className="text-[8px] text-white/30 font-mono truncate max-w-[120px]">{sessionId}</span>
       </div>
+      <div className="mb-2 text-[8px] text-white/45 flex items-center justify-between">
+        <span>provider: {llmProvider ?? '-'}</span>
+        <span>llm key: {hasLlmApiKey ? 'bound' : 'missing'}</span>
+      </div>
+      {props.missing_required_tags && props.missing_required_tags.length > 0 && (
+        <div className="mb-2 p-1.5 rounded border border-amber-400/20 bg-amber-400/10 text-[9px] text-amber-200">
+          Missing tags: {props.missing_required_tags.join(', ')}
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 overflow-auto space-y-1.5 pr-1">
         {(history.data ?? []).map((msg) => (

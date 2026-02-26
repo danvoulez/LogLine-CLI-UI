@@ -9,6 +9,16 @@ export type ObservabilityCascadeSettings = {
   kind_contains: string;
 };
 
+export function resolveBindingValue(
+  bindings: Record<string, unknown>,
+  requestedTags: string[]
+): unknown {
+  for (const tag of requestedTags) {
+    if (tag in bindings) return bindings[tag];
+  }
+  return undefined;
+}
+
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }

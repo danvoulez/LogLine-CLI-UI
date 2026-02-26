@@ -30,6 +30,8 @@ export function ComponentRenderer({ instance, panelId }: ComponentRendererProps)
   const setSelectedInstance = useUIStore((state) => state.setSelectedInstance);
   const isSelected = selectedInstanceByPanel[panelId] === instance.instance_id;
   const effective = effectiveConfig.data?.effective ?? {};
+  const bindings = effectiveConfig.data?.bindings ?? {};
+  const missingRequiredTags = effectiveConfig.data?.missing_required_tags ?? [];
 
   const renderComponent = () => {
     switch (instance.component_id) {
@@ -80,6 +82,8 @@ export function ComponentRenderer({ instance, panelId }: ComponentRendererProps)
             panel_id={panelId}
             instance_id={instance.instance_id}
             effective={effective}
+            bindings={bindings}
+            missing_required_tags={missingRequiredTags}
           />
         );
       case 'secret-field':
@@ -102,7 +106,13 @@ export function ComponentRenderer({ instance, panelId }: ComponentRendererProps)
           />
         );
       case 'observability-hub':
-        return <ObservabilityHub effective={effective} />;
+        return (
+          <ObservabilityHub
+            effective={effective}
+            bindings={bindings}
+            missing_required_tags={missingRequiredTags}
+          />
+        );
       default:
         return (
           <div className="w-full h-full bg-red-500/10 border border-red-500/20 rounded-lg flex items-center justify-center p-4 text-center">

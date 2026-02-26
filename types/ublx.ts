@@ -10,6 +10,8 @@ export interface ComponentManifest {
   version: Version;
   frontend_entry: string;
   permissions: string[];
+  required_binding_tags?: string[];
+  optional_binding_tags?: string[];
   settings_schema_ref?: string;
   source_schema_ref?: string;
   processing_schema_ref?: string;
@@ -81,10 +83,14 @@ export interface AppSettings {
 export interface EffectiveConfig {
   instance_id: string;
   panel_id: string;
+  component_id?: string;
   layers: {
     app: Record<string, unknown>;
     panel: Record<string, unknown>;
     instance: Record<string, unknown>;
   };
   effective: Record<string, unknown>;
+  bindings?: Record<string, unknown>;
+  binding_sources?: Record<string, { source: 'instance' | 'panel' | 'app'; matched_tag: string }>;
+  missing_required_tags?: string[];
 }
