@@ -34,9 +34,12 @@ interface UIState {
 
   // ── Component Store overlay ─────────────────────────────────────────────────
   isStoreOpen:    boolean;
+  isAppSettingsOpen: boolean;
   storeSearch:    string;
   storeFilter:    'all' | 'installed' | 'available';
   toggleStore:    () => void;
+  toggleAppSettings: () => void;
+  closeAppSettings: () => void;
   setStoreSearch: (s: string) => void;
   setStoreFilter: (f: 'all' | 'installed' | 'available') => void;
 
@@ -55,6 +58,7 @@ export const useUIStore = create<UIState>((set) => ({
   flippedPanels:    {},
   selectedInstanceByPanel: {},
   isStoreOpen:      false,
+  isAppSettingsOpen: false,
   storeSearch:      '',
   storeFilter:      'all',
   globalStatus:     'healthy',
@@ -92,6 +96,8 @@ export const useUIStore = create<UIState>((set) => ({
     })),
 
   toggleStore:    () => set((state) => ({ isStoreOpen: !state.isStoreOpen })),
+  toggleAppSettings: () => set((state) => ({ isAppSettingsOpen: !state.isAppSettingsOpen })),
+  closeAppSettings: () => set({ isAppSettingsOpen: false }),
   setStoreSearch: (s) => set({ storeSearch: s }),
   setStoreFilter: (f) => set({ storeFilter: f }),
 

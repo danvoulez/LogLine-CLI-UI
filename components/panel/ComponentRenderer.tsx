@@ -15,8 +15,8 @@ import { SecretField } from '../component-catalog/SecretField';
 import { ObservabilityHub } from '../component-catalog/ObservabilityHub';
 import { BillingDaily } from '../component-catalog/BillingDaily';
 
-import { useEffectiveConfig, useRemoveComponent } from '@/lib/api/db-hooks';
-import { Settings2, Trash2, Activity, MessageSquare, Shield, ListChecks, Package } from 'lucide-react';
+import { useEffectiveConfig } from '@/lib/api/db-hooks';
+import { Settings2, Activity, MessageSquare, Shield, ListChecks, Package } from 'lucide-react';
 import { useUIStore } from '@/stores/ui-store';
 import { MOCK_COMPONENTS } from '@/mocks/ublx-mocks';
 
@@ -28,7 +28,6 @@ interface ComponentRendererProps {
 }
 
 export function ComponentRenderer({ instance, panelId, onMoveStart, onResizeStart }: ComponentRendererProps) {
-  const removeComponent = useRemoveComponent();
   const effectiveConfig = useEffectiveConfig(instance.instance_id);
   const selectedInstanceByPanel = useUIStore((state) => state.selectedInstanceByPanel);
   const setSelectedInstance = useUIStore((state) => state.setSelectedInstance);
@@ -195,17 +194,6 @@ export function ComponentRenderer({ instance, panelId, onMoveStart, onResizeStar
             title="Settings"
           >
             <Settings2 size={11} />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              removeComponent.mutate({ panelId, instanceId: instance.instance_id });
-            }}
-            disabled={removeComponent.isPending}
-            className="p-1.5 bg-red-500/20 hover:bg-red-500 rounded border border-red-500/30 text-red-300 hover:text-white disabled:opacity-30"
-            title="Remove component"
-          >
-            <Trash2 size={11} />
           </button>
         </div>
       </div>

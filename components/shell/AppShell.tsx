@@ -25,7 +25,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setActivePanelIndex,
     nextPanel,
     prevPanel,
-    toggleFlip,
+    toggleAppSettings,
     isStoreOpen,
     toggleStore,
     storeSearch,
@@ -176,12 +176,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="w-1/3 flex justify-end">
           <button
-            onClick={() => {
-              const panel = panels[activePanelIndex];
-              if (panel) toggleFlip(panel.panel_id);
-            }}
+            onClick={toggleAppSettings}
             className="p-1.5 hover:bg-white/5 rounded transition-all text-white/35 hover:text-white/60"
-            title="Tab settings"
+            title="App settings"
           >
             <Settings size={14} />
           </button>

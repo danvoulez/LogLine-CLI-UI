@@ -51,23 +51,13 @@ function BackSettingsPanel({
   initialComponentCommand,
   initialComponentErrorMode,
   initialComponentFrontProps,
-  initialMainApiKey,
-  initialMainLlmApiKey,
-  initialMainLlmGatewayBaseUrl,
-  initialMainLlmGatewayApiKey,
-  initialMainLlmGatewayAdminKey,
-  initialMainWebhookUrl,
-  initialMainWebsocketUrl,
-  initialMainSseUrl,
   effectivePreview,
   bindings,
   bindingSources,
   missingRequiredTags,
-  isSavingMain,
   isSavingTab,
   isSavingComponent,
   savedKey,
-  onSaveMain,
   onSaveTab,
   onSaveComponent,
   onSaveComponentFrontProps,
@@ -80,14 +70,6 @@ function BackSettingsPanel({
   initialComponentCommand: string;
   initialComponentErrorMode: ErrorMode;
   initialComponentFrontProps: Record<string, unknown>;
-  initialMainApiKey: string;
-  initialMainLlmApiKey: string;
-  initialMainLlmGatewayBaseUrl: string;
-  initialMainLlmGatewayApiKey: string;
-  initialMainLlmGatewayAdminKey: string;
-  initialMainWebhookUrl: string;
-  initialMainWebsocketUrl: string;
-  initialMainSseUrl: string;
   effectivePreview: {
     source_hub: string;
     proc_executor: string;
@@ -96,11 +78,9 @@ function BackSettingsPanel({
   bindings: Record<string, unknown>;
   bindingSources: Record<string, { source: 'instance' | 'panel' | 'app'; matched_tag: string }>;
   missingRequiredTags: string[];
-  isSavingMain: boolean;
   isSavingTab: boolean;
   isSavingComponent: boolean;
   savedKey: 'main' | 'tab' | 'component' | null;
-  onSaveMain: (draft: MainSettingsDraft) => void;
   onSaveTab: (draft: {
     source_hub: string;
     proc_error_mode: ErrorMode;
@@ -112,14 +92,6 @@ function BackSettingsPanel({
   const [tabErrorMode, setTabErrorMode] = useState<ErrorMode>(initialTabErrorMode);
   const [componentCommand, setComponentCommand] = useState(initialComponentCommand);
   const [componentErrorMode, setComponentErrorMode] = useState<ErrorMode>(initialComponentErrorMode);
-  const [mainApiKey, setMainApiKey] = useState(initialMainApiKey);
-  const [mainLlmApiKey, setMainLlmApiKey] = useState(initialMainLlmApiKey);
-  const [mainLlmGatewayBaseUrl, setMainLlmGatewayBaseUrl] = useState(initialMainLlmGatewayBaseUrl);
-  const [mainLlmGatewayApiKey, setMainLlmGatewayApiKey] = useState(initialMainLlmGatewayApiKey);
-  const [mainLlmGatewayAdminKey, setMainLlmGatewayAdminKey] = useState(initialMainLlmGatewayAdminKey);
-  const [mainWebhookUrl, setMainWebhookUrl] = useState(initialMainWebhookUrl);
-  const [mainWebsocketUrl, setMainWebsocketUrl] = useState(initialMainWebsocketUrl);
-  const [mainSseUrl, setMainSseUrl] = useState(initialMainSseUrl);
   const [intentType, setIntentType] = useState(initialComponentCommand || 'sync');
   const [intentPayload, setIntentPayload] = useState('{}');
   const [runIdToStop, setRunIdToStop] = useState('');
@@ -207,64 +179,6 @@ function BackSettingsPanel({
 
   return (
     <div className="space-y-5 text-white/80">
-      <section className="space-y-3 border border-white/10 bg-[#323232] rounded p-3">
-        <div className="flex items-center justify-between">
-          <h4 className="text-[10px] font-semibold tracking-wide text-white/70">Main Defaults (Global)</h4>
-          <span className="text-[8px] font-mono text-white/35">All Tabs</span>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <label className="block">
-            <span className="text-[10px] text-white/45 mb-1 block">api_key</span>
-            <input value={mainApiKey} onChange={(e) => setMainApiKey(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
-          </label>
-          <label className="block">
-            <span className="text-[10px] text-white/45 mb-1 block">llm_api_key</span>
-            <input value={mainLlmApiKey} onChange={(e) => setMainLlmApiKey(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
-          </label>
-          <label className="block">
-            <span className="text-[10px] text-white/45 mb-1 block">llm_gateway_base_url</span>
-            <input value={mainLlmGatewayBaseUrl} onChange={(e) => setMainLlmGatewayBaseUrl(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
-          </label>
-          <label className="block">
-            <span className="text-[10px] text-white/45 mb-1 block">llm_gateway_api_key</span>
-            <input value={mainLlmGatewayApiKey} onChange={(e) => setMainLlmGatewayApiKey(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
-          </label>
-          <label className="block md:col-span-2">
-            <span className="text-[10px] text-white/45 mb-1 block">llm_gateway_admin_key</span>
-            <input value={mainLlmGatewayAdminKey} onChange={(e) => setMainLlmGatewayAdminKey(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
-          </label>
-          <label className="block">
-            <span className="text-[10px] text-white/45 mb-1 block">webhook_url</span>
-            <input value={mainWebhookUrl} onChange={(e) => setMainWebhookUrl(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
-          </label>
-          <label className="block">
-            <span className="text-[10px] text-white/45 mb-1 block">websocket_url</span>
-            <input value={mainWebsocketUrl} onChange={(e) => setMainWebsocketUrl(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
-          </label>
-          <label className="block md:col-span-2">
-            <span className="text-[10px] text-white/45 mb-1 block">sse_url</span>
-            <input value={mainSseUrl} onChange={(e) => setMainSseUrl(e.target.value)} className="w-full bg-[#2a2a2a] border border-white/10 rounded px-2.5 py-2 text-xs" />
-          </label>
-        </div>
-        <QuickAction
-          label={savedKey === 'main' ? 'MAIN SAVED' : isSavingMain ? 'SAVING...' : 'SAVE MAIN DEFAULTS'}
-          onClick={() =>
-            onSaveMain({
-              api_key: mainApiKey,
-              llm_api_key: mainLlmApiKey,
-              llm_gateway_base_url: mainLlmGatewayBaseUrl,
-              llm_gateway_api_key: mainLlmGatewayApiKey,
-              llm_gateway_admin_key: mainLlmGatewayAdminKey,
-              webhook_url: mainWebhookUrl,
-              websocket_url: mainWebsocketUrl,
-              sse_url: mainSseUrl,
-            })
-          }
-          variant="secondary"
-          disabled={isSavingMain}
-        />
-      </section>
-
       <section className="space-y-3 border border-white/10 bg-[#323232] rounded p-3">
         <div className="flex items-center justify-between">
           <h4 className="text-[10px] font-semibold tracking-wide text-white/70">Tab Defaults</h4>
@@ -571,8 +485,89 @@ function BackSettingsPanel({
   );
 }
 
+function AppSettingsModal({
+  initial,
+  isSaving,
+  savedKey,
+  onClose,
+  onSave,
+}: {
+  initial: MainSettingsDraft;
+  isSaving: boolean;
+  savedKey: 'main' | 'tab' | 'component' | null;
+  onClose: () => void;
+  onSave: (draft: MainSettingsDraft) => void;
+}) {
+  const [draft, setDraft] = useState<MainSettingsDraft>(initial);
+
+  useEffect(() => {
+    setDraft(initial);
+  }, [initial]);
+
+  return (
+    <div className="absolute inset-0 z-[120] bg-black/40 flex items-center justify-center p-3" onClick={onClose}>
+      <div
+        className="w-full max-w-2xl rounded-lg border border-white/15 bg-[#2b2b2b] p-4 space-y-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-semibold text-white/80 tracking-wide">App Settings</h3>
+          <button onClick={onClose} className="text-[11px] text-white/55 hover:text-white/80">Close</button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">api_key</span>
+            <input value={draft.api_key} onChange={(e) => setDraft((p) => ({ ...p, api_key: e.target.value }))} className="w-full bg-[#252525] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">llm_api_key</span>
+            <input value={draft.llm_api_key} onChange={(e) => setDraft((p) => ({ ...p, llm_api_key: e.target.value }))} className="w-full bg-[#252525] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">llm_gateway_base_url</span>
+            <input value={draft.llm_gateway_base_url} onChange={(e) => setDraft((p) => ({ ...p, llm_gateway_base_url: e.target.value }))} className="w-full bg-[#252525] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">llm_gateway_api_key</span>
+            <input value={draft.llm_gateway_api_key} onChange={(e) => setDraft((p) => ({ ...p, llm_gateway_api_key: e.target.value }))} className="w-full bg-[#252525] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block md:col-span-2">
+            <span className="text-[10px] text-white/45 mb-1 block">llm_gateway_admin_key</span>
+            <input value={draft.llm_gateway_admin_key} onChange={(e) => setDraft((p) => ({ ...p, llm_gateway_admin_key: e.target.value }))} className="w-full bg-[#252525] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">webhook_url</span>
+            <input value={draft.webhook_url} onChange={(e) => setDraft((p) => ({ ...p, webhook_url: e.target.value }))} className="w-full bg-[#252525] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-white/45 mb-1 block">websocket_url</span>
+            <input value={draft.websocket_url} onChange={(e) => setDraft((p) => ({ ...p, websocket_url: e.target.value }))} className="w-full bg-[#252525] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+          <label className="block md:col-span-2">
+            <span className="text-[10px] text-white/45 mb-1 block">sse_url</span>
+            <input value={draft.sse_url} onChange={(e) => setDraft((p) => ({ ...p, sse_url: e.target.value }))} className="w-full bg-[#252525] border border-white/10 rounded px-2.5 py-2 text-xs" />
+          </label>
+        </div>
+        <QuickAction
+          label={savedKey === 'main' ? 'APP SAVED' : isSaving ? 'SAVING...' : 'SAVE APP SETTINGS'}
+          onClick={() => onSave(draft)}
+          variant="secondary"
+          disabled={isSaving}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function Page() {
-  const { activePanelIndex, selectedInstanceByPanel, setSelectedInstance, setActivePanelIndex } = useUIStore();
+  const {
+    activePanelIndex,
+    selectedInstanceByPanel,
+    setSelectedInstance,
+    setActivePanelIndex,
+    isAppSettingsOpen,
+    closeAppSettings,
+  } = useUIStore();
   const panelsQuery = usePanels();
   const { data: panels = [] } = panelsQuery;
   const createPanel = useCreatePanel();
@@ -797,14 +792,6 @@ export default function Page() {
                   }
                   initialComponentErrorMode={asErrorMode(effectiveData.proc_error_mode, 'RETRY')}
                   initialComponentFrontProps={(selectedInstance?.front_props ?? {}) as Record<string, unknown>}
-                  initialMainApiKey={typeof appComponentDefaults.api_key === 'string' ? appComponentDefaults.api_key : ''}
-                  initialMainLlmApiKey={typeof appComponentDefaults.llm_api_key === 'string' ? appComponentDefaults.llm_api_key : ''}
-                  initialMainLlmGatewayBaseUrl={typeof appComponentDefaults.llm_gateway_base_url === 'string' ? appComponentDefaults.llm_gateway_base_url : ''}
-                  initialMainLlmGatewayApiKey={typeof appComponentDefaults.llm_gateway_api_key === 'string' ? appComponentDefaults.llm_gateway_api_key : ''}
-                  initialMainLlmGatewayAdminKey={typeof appComponentDefaults.llm_gateway_admin_key === 'string' ? appComponentDefaults.llm_gateway_admin_key : ''}
-                  initialMainWebhookUrl={typeof appComponentDefaults.webhook_url === 'string' ? appComponentDefaults.webhook_url : ''}
-                  initialMainWebsocketUrl={typeof appComponentDefaults.websocket_url === 'string' ? appComponentDefaults.websocket_url : ''}
-                  initialMainSseUrl={typeof appComponentDefaults.sse_url === 'string' ? appComponentDefaults.sse_url : ''}
                   effectivePreview={{
                     source_hub:
                       typeof effectiveData.source_hub === 'string' ? effectiveData.source_hub : '-',
@@ -820,17 +807,45 @@ export default function Page() {
                   bindings={effectiveConfig.data?.bindings ?? {}}
                   bindingSources={effectiveConfig.data?.binding_sources ?? {}}
                   missingRequiredTags={effectiveConfig.data?.missing_required_tags ?? []}
-                  isSavingMain={updateSetting.isPending}
                   isSavingTab={savePanelSettings.isPending}
                   isSavingComponent={saveInstanceConfig.isPending}
                   savedKey={savedKey}
-                  onSaveMain={handleSaveMainSettings}
                   onSaveTab={handleSaveTabSettings}
                   onSaveComponent={handleSaveComponent}
                   onSaveComponentFrontProps={handleSaveComponentFrontProps}
                 />
               }
             />
+            {isAppSettingsOpen && (
+              <AppSettingsModal
+                initial={{
+                  api_key: typeof appComponentDefaults.api_key === 'string' ? appComponentDefaults.api_key : '',
+                  llm_api_key: typeof appComponentDefaults.llm_api_key === 'string' ? appComponentDefaults.llm_api_key : '',
+                  llm_gateway_base_url:
+                    typeof appComponentDefaults.llm_gateway_base_url === 'string'
+                      ? appComponentDefaults.llm_gateway_base_url
+                      : '',
+                  llm_gateway_api_key:
+                    typeof appComponentDefaults.llm_gateway_api_key === 'string'
+                      ? appComponentDefaults.llm_gateway_api_key
+                      : '',
+                  llm_gateway_admin_key:
+                    typeof appComponentDefaults.llm_gateway_admin_key === 'string'
+                      ? appComponentDefaults.llm_gateway_admin_key
+                      : '',
+                  webhook_url: typeof appComponentDefaults.webhook_url === 'string' ? appComponentDefaults.webhook_url : '',
+                  websocket_url:
+                    typeof appComponentDefaults.websocket_url === 'string'
+                      ? appComponentDefaults.websocket_url
+                      : '',
+                  sse_url: typeof appComponentDefaults.sse_url === 'string' ? appComponentDefaults.sse_url : '',
+                }}
+                isSaving={updateSetting.isPending}
+                savedKey={savedKey}
+                onSave={handleSaveMainSettings}
+                onClose={closeAppSettings}
+              />
+            )}
           </motion.div>
         </AnimatePresence>
       </div>
