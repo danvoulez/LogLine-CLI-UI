@@ -59,4 +59,27 @@
 body {
   background-color: var(--bg);
   color: #fff;
+  margin: 0;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+.safe-app-frame {
+  min-height: 100dvh;
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  background: var(--shell);
+}
+
+@supports not (height: 100dvh) {
+  .safe-app-frame {
+    min-height: 100vh;
+    height: 100vh;
+  }
 }

@@ -122,14 +122,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-[var(--shell)]">
+      <div className="safe-app-frame flex w-full items-center justify-center bg-[var(--shell)]">
         <span className="text-white/20 text-xs font-mono animate-pulse tracking-widest uppercase">Initializing...</span>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen w-full bg-[var(--shell)] text-white overflow-hidden font-sans select-none">
+    <div className="safe-app-frame flex flex-col w-full bg-[var(--shell)] text-white overflow-hidden font-sans select-none">
       {/* Header */}
       <header className="h-9 border-b border-white/10 flex items-center justify-between px-3 bg-[var(--tab-strip)] z-50">
         <div className="w-1/3">
