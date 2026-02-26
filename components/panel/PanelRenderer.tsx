@@ -123,9 +123,9 @@ export function PanelRenderer({ manifest }: PanelRendererProps) {
         </div>
       </div>
       
-      <div className="flex-1 relative">
+      <div className="flex-1 relative overflow-auto rounded-lg border border-white/10 bg-white/[0.02]">
         {manifest.components.length === 0 ? (
-          <div className="w-full h-full flex flex-col items-center justify-center border border-white/10 rounded-lg bg-white/[0.02]">
+          <div className="w-full h-full min-h-[360px] flex flex-col items-center justify-center">
             <div className="w-10 h-10 bg-white/5 rounded flex items-center justify-center mb-3">
               <Plus size={24} className="text-white/20" />
             </div>
@@ -133,18 +133,18 @@ export function PanelRenderer({ manifest }: PanelRendererProps) {
             <p className="text-[10px] text-white/25 mt-1">Open Store to add widgets</p>
           </div>
         ) : (
-          <div ref={canvasRef} className="w-full h-full">
+          <div ref={canvasRef} className="w-full h-full min-h-[480px] min-w-[920px] md:min-w-0">
             <GridCanvas24x32>
-            {manifest.components.map((comp) => (
-              <GridItem key={comp.instance_id} {...(localRects[comp.instance_id] ?? comp.rect)}>
-                <ComponentRenderer
-                  instance={comp}
-                  panelId={manifest.panel_id}
-                  onMoveStart={(instanceId, e) => startDrag(instanceId, 'move', e)}
-                  onResizeStart={(instanceId, e) => startDrag(instanceId, 'resize', e)}
-                />
-              </GridItem>
-            ))}
+              {manifest.components.map((comp) => (
+                <GridItem key={comp.instance_id} {...(localRects[comp.instance_id] ?? comp.rect)}>
+                  <ComponentRenderer
+                    instance={comp}
+                    panelId={manifest.panel_id}
+                    onMoveStart={(instanceId, e) => startDrag(instanceId, 'move', e)}
+                    onResizeStart={(instanceId, e) => startDrag(instanceId, 'resize', e)}
+                  />
+                </GridItem>
+              ))}
             </GridCanvas24x32>
           </div>
         )}

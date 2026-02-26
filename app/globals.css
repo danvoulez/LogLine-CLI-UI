@@ -83,3 +83,10 @@ body {
     height: 100vh;
   }
 }
+
+@media (max-width: 768px) {
+  .text-\[8px\] { font-size: 11px !important; }
+  .text-\[9px\] { font-size: 12px !important; }
+  .text-\[10px\] { font-size: 13px !important; }
+  .text-\[11px\] { font-size: 14px !important; }
+}

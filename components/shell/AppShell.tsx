@@ -165,7 +165,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="safe-app-frame flex flex-col w-full bg-[var(--shell)] text-white overflow-hidden font-sans select-none">
       {/* Header */}
-      <header className="h-9 border-b border-white/10 flex items-center justify-between px-3 bg-[var(--tab-strip)] z-50">
+      <header className="h-11 md:h-9 border-b border-white/10 flex items-center justify-between px-3 bg-[var(--tab-strip)] z-50">
         <div className="w-1/3">
           <span className="text-[10px] font-medium text-white/40 tracking-wide">Workspace</span>
         </div>
@@ -279,7 +279,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Footer / Tab Bar */}
-      <footer className="h-11 border-t border-white/10 flex items-center justify-between px-4 bg-[var(--tab-strip)] z-50">
+      <footer className="h-14 md:h-11 border-t border-white/10 flex items-center justify-between px-3 md:px-4 bg-[var(--tab-strip)] z-50">
         <div className="w-1/4 flex items-center">
           <div
             onDragOver={(e) => {
@@ -311,7 +311,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Labeled Tab Bar */}
-        <div className="flex-1 flex items-center justify-center gap-1.5">
+        <div className="flex-1 flex items-center justify-center gap-1.5 overflow-x-auto custom-scrollbar px-1">
           {panels.map((panel, idx) => {
             const Icon = icons[idx % icons.length] || Home;
             const isActive = activePanelIndex === idx;
