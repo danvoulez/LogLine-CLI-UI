@@ -108,12 +108,36 @@ export default function Page() {
   const updateSetting = useUpdateSetting();
 
   const [savedKey, setSavedKey] = useState<'main' | null>(null);
+  const [createFirstError, setCreateFirstError] = useState<string | null>(null);
 
   const activePanel = panels[activePanelIndex];
+
+  useEffect(() => {
+    if (panels.length > 0 && activePanelIndex >= panels.length) {
+      setActivePanelIndex(0);
+    }
+  }, [panels.length, activePanelIndex, setActivePanelIndex]);
 
   const showSaved = () => {
     setSavedKey('main');
     setTimeout(() => setSavedKey(null), 1800);
+  };
+
+  const handleCreateFirstTab = () => {
+    setCreateFirstError(null);
+    createPanel.mutate(
+      { name: 'New Tab' },
+      {
+        onSuccess: async () => {
+          // Ensure fresh list lands before selecting index.
+          await panelsQuery.refetch();
+          setActivePanelIndex(0);
+        },
+        onError: (err) => {
+          setCreateFirstError(err instanceof Error ? err.message : 'Failed to create first tab');
+        },
+      }
+    );
   };
 
   const appComponentDefaults = (() => {
@@ -176,16 +200,7 @@ export default function Page() {
             <div className="mt-4 flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  createPanel.mutate(
-                    { name: 'New Tab' },
-                    {
-                      onSuccess: () => {
-                        setActivePanelIndex(0);
-                      },
-                    }
-                  );
-                }}
+                onClick={handleCreateFirstTab}
                 disabled={createPanel.isPending}
                 className="rounded border border-white/20 bg-[#343434] px-3 py-1.5 text-[11px] font-semibold text-white/85 hover:bg-[#3a3a3a] disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -201,6 +216,11 @@ export default function Page() {
                 </button>
               )}
             </div>
+            {createFirstError && (
+              <div className="mt-3 rounded border border-red-400/25 bg-red-500/10 px-3 py-2 text-[11px] text-red-200">
+                Could not create tab: {createFirstError}
+              </div>
+            )}
           </div>
         </div>
       </AppShell>
