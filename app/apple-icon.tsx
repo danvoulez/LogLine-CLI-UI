@@ -17,12 +17,10 @@ export default function AppleIcon() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: 'linear-gradient(145deg, #111114 0%, #1a1a20 100%)',
-          border: '1px solid rgba(255,255,255,0.10)',
-          borderRadius: '38px',
+          background: '#ffffff',
         }}
       >
-        <LoglineMark size={132} inverse />
+        <LoglineMark size={132} />
       </div>
     ),
     {
