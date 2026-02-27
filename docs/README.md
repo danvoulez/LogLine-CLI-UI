@@ -12,6 +12,9 @@ This folder is the operational and technical source of truth for UBLX + LogLine 
 - `GETTING_STARTED.md`: First 10-minute setup, checks, and first successful workflow.
 - `ARCHITECTURE.md`: Boundaries and responsibilities across UI, API, gateway, CLI/daemon.
 - `SETTINGS_CASCADE.md`: App -> tab -> component settings inheritance and binding rules.
+- `API_CONTRACTS.md`: App API endpoint contracts, payloads, and proxy behavior.
+- `OPERATIONS.md`: Day-to-day PM2 runtime operations and health checks.
+- `TROUBLESHOOTING.md`: Symptom -> cause -> fix playbook.
 - `ROADMAP.md`: Active work and next priorities.
 
 ## Ecosystem/Institutional Context
