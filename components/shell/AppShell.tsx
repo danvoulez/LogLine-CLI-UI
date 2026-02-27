@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useUIStore } from '@/stores/ui-store';
 import { usePanels, useCreatePanel, useDeletePanel, useRenamePanel, useAddComponent, useRemoveComponent } from '@/lib/api/db-hooks';
 import { useDaemonHealth, useDaemonRuntimeStatus } from '@/lib/api/db-hooks';
@@ -43,6 +43,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [editingPanelId, setEditingPanelId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [isTrashOver, setIsTrashOver] = useState(false);
+  const touchStartX = useRef<number | null>(null);
   const [resolvedAppId] = useState(() => {
     if (typeof window === 'undefined') return 'ublx';
     return window.localStorage.getItem('ublx_app_id')?.trim() || 'ublx';
@@ -118,6 +119,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const dropped = parseDropped(e);
     if (!dropped.instance) return;
     removeComponent.mutate({ panelId: dropped.instance.panelId, instanceId: dropped.instance.instanceId });
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0]?.clientX ?? null;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current == null) return;
+    const endX = e.changedTouches[0]?.clientX ?? touchStartX.current;
+    const delta = endX - touchStartX.current;
+    touchStartX.current = null;
+
+    // Horizontal swipe switches tabs on mobile.
+    if (Math.abs(delta) < 44) return;
+    if (delta > 0) {
+      prevPanel();
+    } else {
+      nextPanel(totalPanels);
+    }
   };
 
   const beginRename = (panelId: string, currentName: string) => {
@@ -211,7 +231,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <button
           onClick={prevPanel}
           disabled={activePanelIndex === 0}
-          className="absolute left-2 z-40 p-2 bg-[#303030] hover:bg-[#363636] rounded disabled:opacity-0 transition-all border border-white/10 group"
+          className="absolute left-2 z-40 hidden md:block p-2 bg-[#303030] hover:bg-[#363636] rounded disabled:opacity-0 transition-all border border-white/10 group"
         >
           <ChevronLeft size={20} className="group-hover:-translate-x-0.5 transition-transform group-hover:text-blue-400" />
         </button>
@@ -219,7 +239,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <button
           onClick={() => nextPanel(totalPanels)}
           disabled={activePanelIndex === totalPanels - 1}
-          className="absolute right-2 z-40 p-2 bg-[#303030] hover:bg-[#363636] rounded disabled:opacity-0 transition-all border border-white/10 group"
+          className="absolute right-2 z-40 hidden md:block p-2 bg-[#303030] hover:bg-[#363636] rounded disabled:opacity-0 transition-all border border-white/10 group"
         >
           <ChevronRight size={20} className="group-hover:translate-x-0.5 transition-transform group-hover:text-blue-400" />
         </button>
@@ -228,6 +248,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="w-full h-full p-1.5 flex items-center justify-center">
           <div
             className="w-full h-full"
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               const panel = panels[activePanelIndex];
@@ -246,15 +268,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               initial={{ opacity: 0, y: 20, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.95 }}
-              className="absolute inset-3 z-[100] bg-[#252525] border border-white/10 rounded-xl overflow-hidden flex flex-col"
+              className="absolute inset-2 md:inset-3 z-[100] bg-[#252525] border border-white/10 rounded-lg md:rounded-xl overflow-hidden flex flex-col"
             >
-              <div className="h-11 border-b border-white/10 flex items-center justify-between px-4 bg-[#2b2b2b] gap-4">
+              <div className="h-auto min-h-11 border-b border-white/10 flex flex-col md:flex-row md:items-center justify-between px-3 md:px-4 py-2 md:py-0 bg-[#2b2b2b] gap-2 md:gap-4">
                 <div className="flex items-center gap-3 shrink-0">
                   <ShoppingBag size={15} className="text-white/60" />
                   <h2 className="text-xs font-semibold text-white/80">Components</h2>
                 </div>
 
-                <div className="flex-1 flex items-center gap-3 max-w-2xl">
+                <div className="flex-1 flex items-center gap-2 md:gap-3 max-w-2xl w-full">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" size={14} />
                     <input
@@ -262,15 +284,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       placeholder="Search components..."
                       value={storeSearch}
                       onChange={(e) => setStoreSearch(e.target.value)}
-                      className="w-full bg-[#222] border border-white/10 rounded pl-9 pr-4 py-1.5 text-xs focus:outline-none focus:border-white/25 transition-all"
-                    />
-                  </div>
-                  <div className="flex bg-[#232323] border border-white/10 rounded p-0.5">
+                    className="w-full bg-[#222] border border-white/10 rounded pl-9 pr-4 py-2 text-xs focus:outline-none focus:border-white/25 transition-all"
+                  />
+                </div>
+                  <div className="flex bg-[#232323] border border-white/10 rounded p-0.5 shrink-0">
                     {(['all', 'installed', 'available'] as const).map((f) => (
                       <button
                         key={f}
                         onClick={() => setStoreFilter(f)}
-                        className={`px-3 py-1 rounded text-[8px] font-semibold uppercase tracking-wide transition-all ${
+                        className={`px-2.5 md:px-3 py-1.5 md:py-1 rounded text-[8px] font-semibold uppercase tracking-wide transition-all ${
                           storeFilter === f ? 'bg-[#3a3a3a] text-white' : 'text-white/45 hover:text-white/70'
                         }`}
                       >
@@ -282,12 +304,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
                 <button
                   onClick={toggleStore}
-                  className="p-1.5 hover:bg-white/5 rounded text-white/20 hover:text-white transition-all shrink-0"
+                  className="p-2 hover:bg-white/5 rounded text-white/20 hover:text-white transition-all shrink-0 self-end md:self-auto"
                 >
                   <Plus size={20} className="rotate-45" />
                 </button>
               </div>
-              <div className="flex-1 p-4 overflow-hidden">
+              <div className="flex-1 p-3 md:p-4 overflow-hidden">
                 <ComponentStore />
               </div>
             </motion.div>

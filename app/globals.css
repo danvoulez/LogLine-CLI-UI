@@ -97,7 +97,7 @@ body {
 
 .component-layout-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(1, minmax(0, 1fr));
   gap: 10px;
   align-content: start;
   padding: 4px;
@@ -114,13 +114,13 @@ body {
 }
 
 .slot--line {
-  grid-column: span 2;
-  min-height: 104px;
+  grid-column: span 1;
+  min-height: 96px;
 }
 
 .slot--block {
-  grid-column: span 2;
-  min-height: 220px;
+  grid-column: span 1;
+  min-height: 204px;
 }
 
 .priority--high {
@@ -133,6 +133,23 @@ body {
 
 .priority--low {
   order: 2;
+}
+
+@media (min-width: 560px) {
+  .component-layout-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .slot--line {
+    grid-column: span 2;
+    min-height: 104px;
+  }
+
+  .slot--block {
+    grid-column: span 2;
+    min-height: 220px;
+  }
 }
 
 @media (min-width: 900px) {
@@ -156,7 +173,15 @@ body {
     min-height: 62dvh;
   }
 
+  .slot--unit {
+    min-height: 92px;
+  }
+
+  .slot--line {
+    min-height: 92px;
+  }
+
   .slot--block {
-    min-height: 200px;
+    min-height: 188px;
   }
 }

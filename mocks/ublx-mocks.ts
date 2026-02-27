@@ -132,6 +132,50 @@ export const MOCK_COMPONENTS: ComponentManifest[] = [
     allowed_size_presets: ['S', 'M', 'WIDE'],
     default_size_preset: 'S',
     limits: { min_w: 4, min_h: 2, max_w: 12, max_h: 4 }
+  },
+  {
+    component_id: 'status-ticker',
+    name: 'Status Ticker',
+    version: '1.0.0',
+    frontend_entry: 'StatusTicker',
+    permissions: ['network'],
+    optional_binding_tags: ['transport:sse', 'transport:websocket', 'backend:llm_gateway:url'],
+    allowed_size_presets: ['M', 'WIDE'],
+    default_size_preset: 'WIDE',
+    limits: { min_w: 8, min_h: 4, max_w: 24, max_h: 8 }
+  },
+  {
+    component_id: 'alert-tracker',
+    name: 'Alert Tracker',
+    version: '1.0.0',
+    frontend_entry: 'AlertTracker',
+    permissions: ['network'],
+    optional_binding_tags: ['transport:webhook', 'transport:sse', 'backend:llm_gateway:url'],
+    allowed_size_presets: ['M', 'L', 'WIDE'],
+    default_size_preset: 'M',
+    limits: { min_w: 6, min_h: 4, max_w: 20, max_h: 10 }
+  },
+  {
+    component_id: 'signal-graph',
+    name: 'Signal Graph',
+    version: '1.0.0',
+    frontend_entry: 'SignalGraph',
+    permissions: ['network'],
+    optional_binding_tags: ['transport:sse', 'transport:websocket'],
+    allowed_size_presets: ['L', 'XL', 'WIDE'],
+    default_size_preset: 'L',
+    limits: { min_w: 10, min_h: 8, max_w: 24, max_h: 16 }
+  },
+  {
+    component_id: 'incident-feed',
+    name: 'Incident Feed',
+    version: '1.0.0',
+    frontend_entry: 'IncidentFeed',
+    permissions: ['network'],
+    optional_binding_tags: ['transport:sse', 'transport:webhook'],
+    allowed_size_presets: ['L', 'XL', 'WIDE'],
+    default_size_preset: 'L',
+    limits: { min_w: 10, min_h: 8, max_w: 24, max_h: 16 }
   }
 ];
 

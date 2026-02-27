@@ -95,6 +95,10 @@ const SIZE_DEFAULTS: Record<string, TemplateSize> = {
   'observability-hub': 'block',
   'billing-daily': 'line',
   'secret-field': 'unit',
+  'status-ticker': 'line',
+  'alert-tracker': 'line',
+  'signal-graph': 'block',
+  'incident-feed': 'block',
 };
 
 const MOBILE_PRIORITY_DEFAULTS: Record<string, ComponentTemplateContract['mobile_priority']> = {
@@ -103,6 +107,10 @@ const MOBILE_PRIORITY_DEFAULTS: Record<string, ComponentTemplateContract['mobile
   'chat-ai': 'high',
   'llm-status': 'normal',
   'service-card': 'normal',
+  'status-ticker': 'high',
+  'alert-tracker': 'high',
+  'signal-graph': 'normal',
+  'incident-feed': 'normal',
 };
 
 function asRecord(value: unknown): Record<string, unknown> {

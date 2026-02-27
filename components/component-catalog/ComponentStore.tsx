@@ -78,6 +78,35 @@ export function ComponentStore() {
       case 'registry':        return wrap(<Registry />);
       case 'pipeline-editor': return wrap(<PipelineEditor />);
       case 'smart-list':      return wrap(<SmartList {...previewProps['smart-list']} />);
+      case 'status-ticker':
+        return (
+          <div className="w-full h-full flex items-center justify-between px-3 bg-white/[0.03] rounded border border-cyan-400/20 text-[10px] text-cyan-200">
+            <span>uptime stream</span>
+            <span>99.9%</span>
+          </div>
+        );
+      case 'alert-tracker':
+        return (
+          <div className="w-full h-full flex items-center justify-between px-3 bg-white/[0.03] rounded border border-rose-400/20 text-[10px]">
+            <span className="text-rose-200">open alerts</span>
+            <span className="text-white/70">2 high</span>
+          </div>
+        );
+      case 'signal-graph':
+        return (
+          <div className="w-full h-full rounded border border-white/10 bg-white/[0.03] p-2 flex items-end gap-1.5">
+            {[20, 34, 28, 40, 24, 45].map((h, idx) => (
+              <div key={idx} className="flex-1 rounded-sm bg-blue-400/40" style={{ height: `${h}%` }} />
+            ))}
+          </div>
+        );
+      case 'incident-feed':
+        return (
+          <div className="w-full h-full rounded border border-white/10 bg-white/[0.03] p-2 space-y-1.5">
+            <div className="text-[9px] text-white/70 border-l-2 border-amber-400/60 pl-2">db latency spike</div>
+            <div className="text-[9px] text-white/70 border-l-2 border-red-400/60 pl-2">webhook retry burst</div>
+          </div>
+        );
       default:
         return (
           <div className="w-full h-full flex items-center justify-center bg-white/5 rounded border border-white/5">
@@ -91,7 +120,7 @@ export function ComponentStore() {
     <div className="w-full h-full flex flex-col gap-4">
       {/* Component Grid */}
       <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <AnimatePresence mode="popLayout">
             {filteredComponents.map((comp) => {
               const isInstalled = installedIdsInActivePanel.includes(comp.component_id);

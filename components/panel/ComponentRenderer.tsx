@@ -2,12 +2,22 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { PanelComponentInstance } from '@/types/ublx';
-import { useEffectiveConfig, useInstanceConfig, usePanelSettings, useSaveInstanceConfig, useSettings, useUpdateComponentFrontProps } from '@/lib/api/db-hooks';
+import {
+  useDaemonEvents,
+  useDaemonRuntimeStatus,
+  useEffectiveConfig,
+  useInstanceConfig,
+  usePanelSettings,
+  useSaveInstanceConfig,
+  useSettings,
+  useStatusLog,
+  useUpdateComponentFrontProps
+} from '@/lib/api/db-hooks';
 import { Settings2, Repeat2 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui-store';
 import { MOCK_COMPONENTS } from '@/mocks/ublx-mocks';
 import { motion } from 'motion/react';
-import { BlockPrimitive, LinePrimitive, TemplateHeader, TemplateIndicators, UnitPrimitive } from './TemplatePrimitives';
+import { BlockPrimitive, LinePrimitive, SignalSparklinePrimitive, TemplateHeader, TemplateIndicators, UnitPrimitive } from './TemplatePrimitives';
 import { TemplateHealthState, TemplateInfoTone, TemplateSize, emitTemplateTelemetry, resolveTemplateContract, TEMPLATE_CONTRACT_VERSION } from '@/lib/config/component-template';
 
 interface ComponentRendererProps {
@@ -26,6 +36,13 @@ function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
 }
+
+type StatusRow = {
+  service_name?: string;
+  status?: string;
+  latency_ms?: number | null;
+  recorded_at?: string;
+};
 
 function normalizeTagInput(value: string): string[] {
   const unique = new Set(
@@ -78,8 +95,74 @@ function shortCopy(componentId: string): string {
     'secret-field': 'secure token',
     'llm-status': 'provider status',
     'service-card': 'service state',
+    'status-ticker': 'uptime pulse',
+    'alert-tracker': 'alert state',
+    'signal-graph': 'signal trend',
+    'incident-feed': 'incident timeline',
   };
   return map[componentId] ?? 'live signal';
+}
+
+function frontSignals(
+  componentId: string,
+  missingRequiredCount: number,
+  activeScope: string,
+  live: {
+    latestStatus: StatusRow | null;
+    nonOkCount: number;
+    eventCount: number;
+    statusLabel: string;
+  }
+): { lineLeft: string; lineRight: string; unitLabel: string; blockTitle: string; blockBody: string } {
+  const needsConfig = missingRequiredCount > 0;
+  const scopeTag = activeScope.trim() ? activeScope.trim() : 'global';
+
+  switch (componentId) {
+    case 'status-ticker':
+      return {
+        lineLeft: needsConfig ? 'awaiting bindings' : 'uptime stream',
+        lineRight: needsConfig ? 'config' : live.statusLabel,
+        unitLabel: 'tick',
+        blockTitle: 'status snapshot',
+        blockBody: needsConfig
+          ? 'connect status bindings'
+          : live.latestStatus?.service_name
+            ? `${live.latestStatus.service_name} ${live.latestStatus.status ?? ''}`.trim()
+            : `scope ${scopeTag}`,
+      };
+    case 'alert-tracker':
+      return {
+        lineLeft: needsConfig ? 'alerts offline' : 'open alerts',
+        lineRight: needsConfig ? 'config' : `${live.nonOkCount} active`,
+        unitLabel: 'ack',
+        blockTitle: 'alert queue',
+        blockBody: needsConfig ? 'missing alert sources' : `${live.eventCount} recent events`,
+      };
+    case 'signal-graph':
+      return {
+        lineLeft: needsConfig ? 'graph pending' : 'signal trend',
+        lineRight: needsConfig ? 'config' : `${live.eventCount} events`,
+        unitLabel: 'spark',
+        blockTitle: 'signal graph',
+        blockBody: needsConfig ? 'attach stream tags' : `runtime ${live.statusLabel}`,
+      };
+    case 'incident-feed':
+      return {
+        lineLeft: needsConfig ? 'feed waiting' : 'latest incidents',
+        lineRight: needsConfig ? 'config' : `${live.eventCount} stream`,
+        unitLabel: 'feed',
+        blockTitle: 'incident feed',
+        blockBody: needsConfig ? 'attach incident source' : `${live.nonOkCount} elevated`,
+      };
+    default:
+      return {
+        lineLeft: needsConfig ? 'requires setup' : 'status line',
+        lineRight: needsConfig ? 'config' : 'live',
+        unitLabel: 'tap',
+        blockTitle: 'priority',
+        blockBody: needsConfig ? 'connect required tags' : 'graph/message zone',
+      };
+  }
 }
 
 export function ComponentRenderer({ instance, panelId }: ComponentRendererProps) {
@@ -87,6 +170,9 @@ export function ComponentRenderer({ instance, panelId }: ComponentRendererProps)
   const instanceConfig = useInstanceConfig(instance.instance_id);
   const panelSettings = usePanelSettings(panelId);
   const appSettings = useSettings();
+  const statusLog = useStatusLog(30);
+  const runtimeStatus = useDaemonRuntimeStatus();
+  const daemonEvents = useDaemonEvents();
 
   const updateFrontProps = useUpdateComponentFrontProps();
   const saveInstanceConfig = useSaveInstanceConfig();
@@ -125,7 +211,6 @@ export function ComponentRenderer({ instance, panelId }: ComponentRendererProps)
   const title = manifest?.name ?? instance.component_id;
 
   const missingRequiredTags = effectiveConfig.data?.missing_required_tags ?? [];
-  const bindingSources = effectiveConfig.data?.binding_sources ?? {};
 
   const appTags = useMemo(() => {
     const settings = (appSettings.data ?? {}) as Record<string, unknown>;
@@ -149,6 +234,37 @@ export function ComponentRenderer({ instance, panelId }: ComponentRendererProps)
   const tabTags = useMemo(
     () => parsePanelTagBindings((panelSettings.data?.settings ?? {}) as Record<string, unknown>),
     [panelSettings.data?.settings]
+  );
+  const liveSignal = useMemo(() => {
+    const rows = Array.isArray(statusLog.data) ? (statusLog.data as StatusRow[]) : [];
+    const latestStatus = rows[0] ?? null;
+    const nonOkCount = rows.filter((row) => {
+      const status = String(row.status ?? '').toLowerCase();
+      return status !== '' && status !== 'ok' && status !== 'healthy';
+    }).length;
+
+    const events = Array.isArray(daemonEvents.data) ? daemonEvents.data : [];
+    const eventCount = events.length;
+    const latencySeries = rows
+      .map((row) => (typeof row.latency_ms === 'number' && Number.isFinite(row.latency_ms) ? row.latency_ms : null))
+      .filter((v): v is number => v !== null)
+      .slice(0, 8)
+      .reverse();
+
+    const runtimeOk = runtimeStatus.isError ? false : true;
+    const statusLabel = runtimeOk ? 'online' : 'degraded';
+
+    return {
+      latestStatus,
+      nonOkCount,
+      eventCount,
+      statusLabel,
+      latencySeries,
+    };
+  }, [statusLog.data, daemonEvents.data, runtimeStatus.isError]);
+  const signal = useMemo(
+    () => frontSignals(instance.component_id, missingRequiredTags.length, appScope, liveSignal),
+    [instance.component_id, missingRequiredTags.length, appScope, liveSignal]
   );
 
   const handleSave = () => {
@@ -266,7 +382,7 @@ export function ComponentRenderer({ instance, panelId }: ComponentRendererProps)
                 panel_id: panelId,
               });
             }}
-            className="absolute right-2 top-2 z-30 h-6 w-6 rounded border border-white/20 bg-white/[0.04] text-white/60 hover:bg-white/[0.1] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            className="absolute right-2 top-2 z-30 h-7 w-7 md:h-6 md:w-6 rounded border border-white/20 bg-white/[0.04] text-white/60 hover:bg-white/[0.1] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
             title="Flip component settings"
             aria-label="Flip component settings"
           >
@@ -279,9 +395,13 @@ export function ComponentRenderer({ instance, panelId }: ComponentRendererProps)
             <TemplateIndicators health={health} infoTone={infoTone} />
 
             <div className="mt-auto space-y-1.5">
-              <LinePrimitive labelLeft={templateSize === 'unit' ? 'quick action' : 'status line'} labelRight={templateSize} />
-              {templateSize === 'unit' && <UnitPrimitive label="tap" />}
-              {templateSize === 'block' && <BlockPrimitive title="priority" body="graph/message zone" />}
+              <LinePrimitive labelLeft={signal.lineLeft} labelRight={templateSize === 'unit' ? signal.unitLabel : signal.lineRight} />
+              {templateSize === 'unit' && <UnitPrimitive label={signal.unitLabel} />}
+              {templateSize === 'block' && (
+                instance.component_id === 'signal-graph'
+                  ? <SignalSparklinePrimitive title={signal.blockTitle} values={liveSignal.latencySeries} />
+                  : <BlockPrimitive title={signal.blockTitle} body={signal.blockBody} />
+              )}
             </div>
           </div>
         </div>
@@ -292,14 +412,14 @@ export function ComponentRenderer({ instance, panelId }: ComponentRendererProps)
               e.stopPropagation();
               toggleInstanceFlip(instance.instance_id);
             }}
-            className="absolute right-2 top-2 z-30 h-6 w-6 rounded border border-white/20 bg-white/[0.04] text-white/60 hover:bg-white/[0.1] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            className="absolute right-2 top-2 z-30 h-7 w-7 md:h-6 md:w-6 rounded border border-white/20 bg-white/[0.04] text-white/60 hover:bg-white/[0.1] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
             title="Flip back"
             aria-label="Flip component back"
           >
             <Repeat2 size={10} className="mx-auto" />
           </button>
 
-          <div className="space-y-2 pr-6 text-[10px] text-white/70">
+          <div className="space-y-2 pr-6 text-[11px] md:text-[10px] text-white/70">
             <p className="text-white/80">Template Settings</p>
 
             <div className="grid grid-cols-2 gap-1.5">

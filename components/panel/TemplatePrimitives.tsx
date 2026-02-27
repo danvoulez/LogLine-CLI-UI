@@ -62,3 +62,32 @@ export function BlockPrimitive({ title, body }: { title: string; body: string })
     </div>
   );
 }
+
+export function SignalSparklinePrimitive({
+  title,
+  values,
+}: {
+  title: string;
+  values: number[];
+}) {
+  const safe = values.length > 0 ? values : [0, 0, 0, 0, 0, 0];
+  const max = Math.max(...safe, 1);
+  return (
+    <div className="w-full min-h-16 rounded border border-white/10 bg-white/[0.03] p-2 flex flex-col gap-2">
+      <p className="text-[10px] text-white/75">{title}</p>
+      <div className="h-10 flex items-end gap-1.5">
+        {safe.map((value, idx) => {
+          const pct = Math.max(8, Math.round((value / max) * 100));
+          return (
+            <div
+              key={`${idx}-${value}`}
+              className="flex-1 rounded-sm bg-blue-400/50"
+              style={{ height: `${pct}%` }}
+              aria-hidden
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
