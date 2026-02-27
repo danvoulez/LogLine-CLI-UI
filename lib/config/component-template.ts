@@ -193,8 +193,9 @@ export function resolveTemplateContract(componentId: string, frontProps?: Record
       : BASE_TEMPLATE_CONTRACT.refresh_policy.interval_ms;
 
   const connectionTypeRaw = raw.connection_type ?? connectionRaw.type;
-  const connectionType: TemplateConnectionContract['type'] = isAllowedConnectionType(String(connectionTypeRaw))
-    ? connectionTypeRaw
+  const connectionTypeCandidate = String(connectionTypeRaw);
+  const connectionType: TemplateConnectionContract['type'] = isAllowedConnectionType(connectionTypeCandidate)
+    ? connectionTypeCandidate
     : BASE_TEMPLATE_CONTRACT.connection_contract.type;
 
   const cliCommand = asString(raw.cli_command ?? cliRaw.command, BASE_TEMPLATE_CONTRACT.cli_contract.command);
