@@ -6,7 +6,8 @@
     --shell: #202020;
     --tab-strip: #2a2a2a;
     --card: #262626;
-    --accent: #3b82f6; /* Changed to blue for details/hovers */
+    --panel-surface: transparent;
+    --accent: #3b82f6;
     --signaling-ok: #10b981;
     --signaling-error: #ef4444;
     --border: rgba(255, 255, 255, 0.12);
@@ -23,7 +24,7 @@
   .backface-hidden {
     backface-visibility: hidden;
   }
-  
+
   .glass {
     background: var(--tab-strip);
     border: 1px solid var(--border);
@@ -84,9 +85,78 @@ body {
   }
 }
 
-@media (max-width: 768px) {
-  .text-\[8px\] { font-size: 11px !important; }
-  .text-\[9px\] { font-size: 12px !important; }
-  .text-\[10px\] { font-size: 13px !important; }
-  .text-\[11px\] { font-size: 14px !important; }
+.panel-stage {
+  container-type: inline-size;
+}
+
+.panel-canvas {
+  width: 100%;
+  height: auto;
+  min-height: min(70dvh, 760px);
+}
+
+.component-layout-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-content: start;
+  padding: 4px;
+}
+
+.component-slot {
+  width: 100%;
+}
+
+.slot--unit {
+  grid-column: span 1;
+  min-height: 104px;
+  aspect-ratio: 1 / 1;
+}
+
+.slot--line {
+  grid-column: span 2;
+  min-height: 104px;
+}
+
+.slot--block {
+  grid-column: span 2;
+  min-height: 220px;
+}
+
+.priority--high {
+  order: 0;
+}
+
+.priority--normal {
+  order: 1;
+}
+
+.priority--low {
+  order: 2;
+}
+
+@media (min-width: 900px) {
+  .component-layout-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .slot--line {
+    grid-column: span 3;
+  }
+
+  .slot--block {
+    grid-column: span 4;
+    min-height: 240px;
+  }
+}
+
+@media (max-width: 640px) {
+  .panel-canvas {
+    min-height: 62dvh;
+  }
+
+  .slot--block {
+    min-height: 200px;
+  }
 }

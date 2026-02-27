@@ -2,6 +2,7 @@ import { db } from '@/db/index';
 import { appSettings, instanceConfigs, panelComponents, panelSettings, panels } from '@/db/schema';
 import { MOCK_COMPONENTS } from '@/mocks/ublx-mocks';
 import { and, eq } from 'drizzle-orm';
+import { toScopedAppKey, toScopedKey } from '@/lib/auth/workspace';
 
 type JsonPrimitive = string | number | boolean | null;
 type JsonValue = JsonPrimitive | JsonRecord | JsonValue[];
@@ -58,7 +59,25 @@ export type EffectiveConfigResult = {
   bindings: JsonRecord;
   binding_sources: Record<string, { source: 'instance' | 'panel' | 'app'; matched_tag: string }>;
   missing_required_tags: string[];
+  app_scope?: string;
 };
+
+function withoutScopeContainers(layer: JsonRecord): JsonRecord {
+  const { scopes: _scopes, apps: _apps, ...rest } = layer;
+  return rest;
+}
+
+function resolveScopedAppLayer(allDefaults: JsonRecord, appScope?: string): JsonRecord {
+  const base = withoutScopeContainers(allDefaults);
+  if (!appScope) return base;
+
+  const scopes = isPlainObject(allDefaults.scopes) ? allDefaults.scopes : {};
+  const apps = isPlainObject(allDefaults.apps) ? allDefaults.apps : {};
+  const scoped = (scopes[appScope] ?? apps[appScope]) as JsonValue;
+  if (!isPlainObject(scoped)) return base;
+
+  return deepMerge(base, scoped);
+}
 
 function parseTagBindings(layer: JsonRecord): Record<string, JsonValue> {
   const implicit: Record<string, JsonValue> = {};
@@ -111,20 +130,32 @@ function resolveBindingFromLayer(
   return null;
 }
 
-export async function loadAppComponentDefaults(): Promise<JsonRecord> {
-  const rows = await db.select().from(appSettings);
-  const allSettings = Object.fromEntries(
-    rows.map((r) => {
-      try {
-        return [r.key, JSON.parse(r.value) as unknown];
-      } catch {
-        return [r.key, r.value];
-      }
-    })
-  ) as JsonRecord;
+function parseImportedTags(layer: JsonRecord, key: 'import_app_tags' | 'import_tab_tags'): string[] {
+  const value = layer[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+}
 
-  const defaults = allSettings.component_defaults;
-  return isPlainObject(defaults) ? defaults : {};
+export async function loadAppComponentDefaults(workspaceId: string, appId: string): Promise<JsonRecord> {
+  const scopedAppKey = toScopedAppKey(workspaceId, appId, 'component_defaults');
+  const scopedWorkspaceKey = toScopedKey(workspaceId, 'component_defaults');
+
+  const appRows = await db.select().from(appSettings).where(eq(appSettings.key, scopedAppKey)).limit(1);
+  const workspaceRows = await db
+    .select()
+    .from(appSettings)
+    .where(eq(appSettings.key, scopedWorkspaceKey))
+    .limit(1);
+
+  const first = appRows[0] ?? workspaceRows[0];
+  if (!first) return {};
+
+  try {
+    const parsed = JSON.parse(first.value) as unknown;
+    return isPlainObject(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 export async function loadPanelSettings(panelId: string): Promise<JsonRecord> {
@@ -170,7 +201,11 @@ export async function loadInstanceSettings(instanceId: string): Promise<JsonReco
   };
 }
 
-export async function resolveEffectiveConfig(instanceId: string, workspaceId = 'default'): Promise<EffectiveConfigResult | null> {
+export async function resolveEffectiveConfig(
+  instanceId: string,
+  workspaceId = 'default',
+  appId = 'ublx'
+): Promise<EffectiveConfigResult | null> {
   const refs = await db
     .select({
       instance_id: panelComponents.instance_id,
@@ -179,25 +214,59 @@ export async function resolveEffectiveConfig(instanceId: string, workspaceId = '
     })
     .from(panelComponents)
     .innerJoin(panels, eq(panelComponents.panel_id, panels.panel_id))
-    .where(and(eq(panelComponents.instance_id, instanceId), eq(panels.workspace_id, workspaceId)))
+    .where(
+      and(
+        eq(panelComponents.instance_id, instanceId),
+        eq(panels.workspace_id, workspaceId),
+        eq(panels.app_id, appId)
+      )
+    )
     .limit(1);
 
   const instanceRef = refs[0];
   if (!instanceRef) return null;
 
-  const appLayer = await loadAppComponentDefaults();
-  const panelLayer = await loadPanelSettings(instanceRef.panel_id);
   const instanceLayer = await loadInstanceSettings(instanceRef.instance_id);
+  const scopeCandidate = instanceLayer.app_scope;
+  const appScope = typeof scopeCandidate === 'string' && scopeCandidate.trim().length > 0
+    ? scopeCandidate.trim()
+    : undefined;
 
-  const effective = deepMerge(deepMerge(appLayer, panelLayer), instanceLayer);
+  const appLayerAll = await loadAppComponentDefaults(workspaceId, appId);
+  const appLayer = resolveScopedAppLayer(appLayerAll, appScope);
+  const panelLayer = await loadPanelSettings(instanceRef.panel_id);
+
+  // Precedence contract:
+  // 1) Scoped app defaults (by app_scope)
+  // 2) Panel defaults
+  // 3) Instance overrides
+  // Special case: override_cascade=true -> instance layer only.
+  const shouldOverrideCascade = instanceLayer.override_cascade === true;
+  const effective = shouldOverrideCascade
+    ? { ...instanceLayer }
+    : deepMerge(deepMerge(appLayer, panelLayer), instanceLayer);
   const manifest = MOCK_COMPONENTS.find((c) => c.component_id === instanceRef.component_id);
 
   const appBindings = parseTagBindings(appLayer);
   const panelBindings = parseTagBindings(panelLayer);
   const instanceBindings = parseTagBindings(instanceLayer);
+  const importAppTags = parseImportedTags(instanceLayer, 'import_app_tags');
+  const importTabTags = parseImportedTags(instanceLayer, 'import_tab_tags');
+
+  for (const tag of importTabTags) {
+    if (tag in instanceBindings) continue;
+    const resolved = resolveBindingFromLayer(tag, panelBindings);
+    if (resolved) instanceBindings[tag] = resolved.value;
+  }
+  for (const tag of importAppTags) {
+    if (tag in instanceBindings) continue;
+    const resolved = resolveBindingFromLayer(tag, appBindings);
+    if (resolved) instanceBindings[tag] = resolved.value;
+  }
+
   const requiredTags = manifest?.required_binding_tags ?? [];
   const optionalTags = manifest?.optional_binding_tags ?? [];
-  const requestedTags = [...requiredTags, ...optionalTags];
+  const requestedTags = Array.from(new Set([...requiredTags, ...optionalTags, ...importAppTags, ...importTabTags]));
 
   const resolvedBindings: JsonRecord = {};
   const bindingSources: Record<string, { source: 'instance' | 'panel' | 'app'; matched_tag: string }> = {};
@@ -211,18 +280,20 @@ export async function resolveEffectiveConfig(instanceId: string, workspaceId = '
       continue;
     }
 
-    const fromPanel = resolveBindingFromLayer(requestedTag, panelBindings);
-    if (fromPanel) {
-      resolvedBindings[requestedTag] = fromPanel.value;
-      bindingSources[requestedTag] = { source: 'panel', matched_tag: fromPanel.matched_tag };
-      continue;
-    }
+    if (!shouldOverrideCascade) {
+      const fromPanel = resolveBindingFromLayer(requestedTag, panelBindings);
+      if (fromPanel) {
+        resolvedBindings[requestedTag] = fromPanel.value;
+        bindingSources[requestedTag] = { source: 'panel', matched_tag: fromPanel.matched_tag };
+        continue;
+      }
 
-    const fromApp = resolveBindingFromLayer(requestedTag, appBindings);
-    if (fromApp) {
-      resolvedBindings[requestedTag] = fromApp.value;
-      bindingSources[requestedTag] = { source: 'app', matched_tag: fromApp.matched_tag };
-      continue;
+      const fromApp = resolveBindingFromLayer(requestedTag, appBindings);
+      if (fromApp) {
+        resolvedBindings[requestedTag] = fromApp.value;
+        bindingSources[requestedTag] = { source: 'app', matched_tag: fromApp.matched_tag };
+        continue;
+      }
     }
 
     if (requiredTags.includes(requestedTag)) {
@@ -243,5 +314,6 @@ export async function resolveEffectiveConfig(instanceId: string, workspaceId = '
     bindings: resolvedBindings,
     binding_sources: bindingSources,
     missing_required_tags: missingRequiredTags,
+    app_scope: appScope,
   };
 }

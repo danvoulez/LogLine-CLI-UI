@@ -26,9 +26,9 @@ interface UIState {
   nextPanel: (totalPanels: number) => void;
   prevPanel: () => void;
 
-  // ── Panel flip state (ephemeral) ────────────────────────────────────────────
-  flippedPanels: Record<string, boolean>;
-  toggleFlip: (panelId: string) => void;
+  // ── Component flip state (ephemeral) ────────────────────────────────────────
+  flippedInstances: Record<string, boolean>;
+  toggleInstanceFlip: (instanceId: string) => void;
   selectedInstanceByPanel: Record<string, string | null>;
   setSelectedInstance: (panelId: string, instanceId: string | null) => void;
 
@@ -55,7 +55,7 @@ interface UIState {
 
 export const useUIStore = create<UIState>((set) => ({
   activePanelIndex: 0,
-  flippedPanels:    {},
+  flippedInstances: {},
   selectedInstanceByPanel: {},
   isStoreOpen:      false,
   isAppSettingsOpen: false,
@@ -79,11 +79,11 @@ export const useUIStore = create<UIState>((set) => ({
       activePanelIndex: Math.max(state.activePanelIndex - 1, 0),
     })),
 
-  toggleFlip: (panelId) =>
+  toggleInstanceFlip: (instanceId) =>
     set((state) => ({
-      flippedPanels: {
-        ...state.flippedPanels,
-        [panelId]: !state.flippedPanels[panelId],
+      flippedInstances: {
+        ...state.flippedInstances,
+        [instanceId]: !state.flippedInstances[instanceId],
       },
     })),
 

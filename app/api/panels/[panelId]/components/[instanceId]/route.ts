@@ -6,7 +6,8 @@ import { and, eq } from 'drizzle-orm';
 import { MOCK_COMPONENTS } from '@/mocks/ublx-mocks';
 import { normalizeRectToPresets, resolveAllowedPresetIds, SizePresetId } from '@/lib/layout/grid-presets';
 import { z } from 'zod';
-import { resolveWorkspaceId } from '@/lib/auth/workspace';
+import { AccessDeniedError, requireAccess } from '@/lib/auth/access';
+import { isCliCommandAllowed, isAllowedConnectionType, normalizeTemplateFrontProps } from '@/lib/config/component-template';
 
 type Params = { params: Promise<{ panelId: string; instanceId: string }> };
 const patchComponentSchema = z.object({
@@ -24,12 +25,14 @@ const patchComponentSchema = z.object({
 export async function PATCH(req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
     await ensureDbSchema();
-    const workspaceId = resolveWorkspaceId(req);
+    const access = await requireAccess(req, 'write');
+    const workspaceId = access.workspaceId;
+    const appId = access.appId;
     const { panelId, instanceId } = await params;
     const panel = await db
       .select({ panel_id: panels.panel_id })
       .from(panels)
-      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId)))
+      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)))
       .limit(1);
     if (panel.length === 0) {
       return NextResponse.json({ error: 'Panel not found in workspace' }, { status: 404 });
@@ -70,7 +73,19 @@ export async function PATCH(req: NextRequest, { params }: Params): Promise<NextR
       updates.rect_h = normalized.rect.h;
     }
     if (body.front_props !== undefined) {
-      updates.front_props = JSON.stringify(body.front_props);
+      const normalizedFrontProps = normalizeTemplateFrontProps(current.component_id, body.front_props);
+      const cliCommand = typeof normalizedFrontProps.cli_command === 'string' ? normalizedFrontProps.cli_command : '';
+      const connectionType =
+        typeof normalizedFrontProps.connection_type === 'string' ? normalizedFrontProps.connection_type : '';
+
+      if (!isCliCommandAllowed(cliCommand)) {
+        return NextResponse.json({ error: 'cli_command is not allowed by template policy' }, { status: 400 });
+      }
+      if (!isAllowedConnectionType(connectionType)) {
+        return NextResponse.json({ error: 'connection_type is not allowed by template policy' }, { status: 400 });
+      }
+
+      updates.front_props = JSON.stringify(normalizedFrontProps);
     }
 
     await db.update(panelComponents)
@@ -82,6 +97,9 @@ export async function PATCH(req: NextRequest, { params }: Params): Promise<NextR
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: 'Invalid request payload' }, { status: 400 });
     }
+    if (err instanceof AccessDeniedError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error('[PATCH /api/panels/:id/components/:iid]', err);
     return NextResponse.json({ error: 'Failed to update component' }, { status: 500 });
   }
@@ -92,12 +110,14 @@ export async function PATCH(req: NextRequest, { params }: Params): Promise<NextR
 export async function DELETE(_req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
     await ensureDbSchema();
-    const workspaceId = resolveWorkspaceId(_req);
+    const access = await requireAccess(_req, 'write');
+    const workspaceId = access.workspaceId;
+    const appId = access.appId;
     const { panelId, instanceId } = await params;
     const panel = await db
       .select({ panel_id: panels.panel_id })
       .from(panels)
-      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId)))
+      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)))
       .limit(1);
     if (panel.length === 0) {
       return NextResponse.json({ error: 'Panel not found in workspace' }, { status: 404 });
@@ -108,6 +128,9 @@ export async function DELETE(_req: NextRequest, { params }: Params): Promise<Nex
       .where(and(eq(panelComponents.instance_id, instanceId), eq(panelComponents.panel_id, panelId)));
     return NextResponse.json({ ok: true });
   } catch (err) {
+    if (err instanceof AccessDeniedError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error('[DELETE /api/panels/:id/components/:iid]', err);
     return NextResponse.json({ error: 'Failed to remove component' }, { status: 500 });
   }

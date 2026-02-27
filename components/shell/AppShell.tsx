@@ -32,6 +32,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setStoreSearch,
     storeFilter,
     setStoreFilter,
+    selectedInstanceByPanel,
     globalStatus,
     wsConnected,
     setGlobalStatus,
@@ -42,6 +43,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [editingPanelId, setEditingPanelId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [isTrashOver, setIsTrashOver] = useState(false);
+  const [resolvedAppId] = useState(() => {
+    if (typeof window === 'undefined') return 'ublx';
+    return window.localStorage.getItem('ublx_app_id')?.trim() || 'ublx';
+  });
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -153,6 +158,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }[globalStatus];
 
   const icons = [Home, Activity, Upload, FileText, Database, Cpu, ShoppingBag];
+  const activePanel = panels[activePanelIndex];
+  const selectedInstanceId = activePanel
+    ? (selectedInstanceByPanel[activePanel.panel_id] ?? activePanel.components?.[0]?.instance_id ?? '')
+    : '';
+  const selectedInstance = activePanel?.components?.find((c) => c.instance_id === selectedInstanceId);
+  const selectedScope = typeof selectedInstance?.front_props?.app_scope === 'string'
+    ? selectedInstance.front_props.app_scope
+    : '';
+  const scopeLabel = selectedScope || resolvedAppId || 'global';
 
   if (isLoading) {
     return (
@@ -167,11 +181,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Header */}
       <header className="h-11 md:h-9 border-b border-white/10 flex items-center justify-between px-3 bg-[var(--tab-strip)] z-50">
         <div className="w-1/3">
-          <span className="text-[10px] font-medium text-white/40 tracking-wide">Workspace</span>
+          <span className="text-[10px] font-medium text-white/30 tracking-wide">Workspace</span>
         </div>
 
         <div className="w-1/3 flex justify-center">
-          <span className="text-[10px] text-white/35 font-mono">UBLX</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[14px] md:text-[15px] font-black tracking-tight text-white/95">UBLX</span>
+            <span className="text-[11px] text-white/45">&gt;</span>
+            <span className="text-[11px] md:text-[12px] font-semibold text-white/75 truncate max-w-[180px]">
+              {scopeLabel}
+            </span>
+          </div>
         </div>
 
         <div className="w-1/3 flex justify-end">

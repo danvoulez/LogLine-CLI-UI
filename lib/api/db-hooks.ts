@@ -25,12 +25,28 @@ function resolveWorkspaceId(): string {
   return fromStorage || 'default';
 }
 
+function resolveAppId(): string {
+  if (typeof window === 'undefined') return 'ublx';
+  const fromStorage = window.localStorage.getItem('ublx_app_id')?.trim();
+  return fromStorage || 'ublx';
+}
+
+function resolveUserId(): string {
+  if (typeof window === 'undefined') return 'local-dev';
+  const fromStorage = window.localStorage.getItem('ublx_user_id')?.trim();
+  return fromStorage || 'local-dev';
+}
+
 // ── Internal fetch helper ─────────────────────────────────────────────────────
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const workspaceId = resolveWorkspaceId();
+  const appId = resolveAppId();
+  const userId = resolveUserId();
   const mergedHeaders = new Headers(options?.headers);
   if (!mergedHeaders.has('Content-Type')) mergedHeaders.set('Content-Type', 'application/json');
   mergedHeaders.set('x-workspace-id', workspaceId);
+  mergedHeaders.set('x-app-id', appId);
+  mergedHeaders.set('x-user-id', userId);
   const res = await fetch(url, {
     ...options,
     headers: mergedHeaders,
@@ -47,11 +63,15 @@ async function gatewayFetchJson<T>(
   opts: { baseUrl: string; token?: string; method?: string; body?: unknown; search?: string }
 ): Promise<T> {
   const workspaceId = resolveWorkspaceId();
+  const appId = resolveAppId();
+  const userId = resolveUserId();
   const res = await fetch(`/api/llm-gateway${path}${opts.search ?? ''}`, {
     method: opts.method ?? 'GET',
     headers: {
       'Content-Type': 'application/json',
       'x-workspace-id': workspaceId,
+      'x-app-id': appId,
+      'x-user-id': userId,
       'x-llm-gateway-base-url': opts.baseUrl,
       ...(opts.token ? { authorization: opts.token.startsWith('Bearer ') ? opts.token : `Bearer ${opts.token}` } : {}),
     },
@@ -70,9 +90,13 @@ async function gatewayFetchText(
   opts: { baseUrl: string; token?: string; search?: string }
 ): Promise<string> {
   const workspaceId = resolveWorkspaceId();
+  const appId = resolveAppId();
+  const userId = resolveUserId();
   const res = await fetch(`/api/llm-gateway${path}${opts.search ?? ''}`, {
     headers: {
       'x-workspace-id': workspaceId,
+      'x-app-id': appId,
+      'x-user-id': userId,
       'x-llm-gateway-base-url': opts.baseUrl,
       ...(opts.token ? { authorization: opts.token.startsWith('Bearer ') ? opts.token : `Bearer ${opts.token}` } : {}),
     },
@@ -335,6 +359,7 @@ export function useEffectiveConfig(instanceId: string) {
     bindings: Record<string, unknown>;
     binding_sources: Record<string, { source: 'instance' | 'panel' | 'app'; matched_tag: string }>;
     missing_required_tags: string[];
+    app_scope?: string;
   }>({
     queryKey: QUERY_KEYS.effectiveConfig(instanceId),
     queryFn:  () => apiFetch(`/api/effective-config/${instanceId}`),
