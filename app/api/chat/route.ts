@@ -1,67 +1,64 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db/index';
-import { ensureDbSchema } from '@/db/bootstrap';
-import { chatMessages } from '@/db/schema';
-import { eq, asc, and } from 'drizzle-orm';
-import { resolveWorkspaceId } from '@/lib/auth/workspace';
+import { callLogline } from '@/lib/api/logline-client';
 
-// GET /api/chat?session_id=...
+// GET /api/chat
+// Rust-owned endpoint: proxy request to logline-daemon /v1/chat.
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  const search = req.nextUrl.search || '';
   try {
-    await ensureDbSchema();
-    const workspaceId = resolveWorkspaceId(req);
-    const sessionId = req.nextUrl.searchParams.get('session_id');
-    if (!sessionId) {
-      return NextResponse.json({ error: 'session_id required' }, { status: 400 });
-    }
+    const upstream = await callLogline(req, `/v1/chat${search}`, 'GET');
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const text = await upstream.text();
 
-    const rows = await db
-      .select()
-      .from(chatMessages)
-      .where(and(eq(chatMessages.workspace_id, workspaceId), eq(chatMessages.session_id, sessionId)))
-      .orderBy(asc(chatMessages.created_at))
-      ;
-
-    return NextResponse.json(rows);
-  } catch (err) {
-    console.error('[GET /api/chat]', err);
-    return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 });
+    return new NextResponse(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+      },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Failed to reach logline daemon',
+        detail: error instanceof Error ? error.message : 'unknown error',
+      },
+      { status: 502 }
+    );
   }
 }
 
 // POST /api/chat
-// Body: { session_id, role, content, panel_id?, instance_id?, model_used?, latency_ms? }
+// Rust-owned endpoint: proxy request to logline-daemon /v1/chat.
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const search = req.nextUrl.search || '';
+
+  let body: unknown;
   try {
-    await ensureDbSchema();
-    const workspaceId = resolveWorkspaceId(req);
-    const body = await req.json() as {
-      session_id:   string;
-      role:         'user' | 'assistant';
-      content:      string;
-      panel_id?:    string;
-      instance_id?: string;
-      model_used?:  string;
-      latency_ms?:  number;
-    };
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
 
-    const row = {
-      id:          crypto.randomUUID(),
-      workspace_id: workspaceId,
-      session_id:  body.session_id,
-      panel_id:    body.panel_id    ?? null,
-      instance_id: body.instance_id ?? null,
-      role:        body.role,
-      content:     body.content,
-      model_used:  body.model_used  ?? null,
-      latency_ms:  body.latency_ms  ?? null,
-      created_at:  new Date(),
-    };
+  try {
+    const upstream = await callLogline(req, `/v1/chat${search}`, 'POST', body);
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const text = await upstream.text();
 
-    await db.insert(chatMessages).values(row);
-    return NextResponse.json(row, { status: 201 });
-  } catch (err) {
-    console.error('[POST /api/chat]', err);
-    return NextResponse.json({ error: 'Failed to save message' }, { status: 500 });
+    return new NextResponse(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+      },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Failed to reach logline daemon',
+        detail: error instanceof Error ? error.message : 'unknown error',
+      },
+      { status: 502 }
+    );
   }
 }

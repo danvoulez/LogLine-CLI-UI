@@ -11,18 +11,27 @@ This document defines the minimum security posture for UBLX, gateway proxying, a
 
 Sensitive values include:
 - DB credentials (`DATABASE_URL`)
-- gateway admin key / app keys
-- `CLI_JWT` and onboarding secret
+- gateway admin key / app keys / user provider keys
+- `CLI_JWT` and onboarding secrets
 - daemon bootstrap token
+- `SUPABASE_JWT_SECRET` and `SUPABASE_SERVICE_ROLE_KEY`
 
-## 2) Workspace Isolation
+## 2) Identity and Scope Isolation
 
-- API routes resolve workspace from:
-  - `x-workspace-id`
-  - `workspace_id` query
-  - fallback default
-- Persistence should always scope by workspace where applicable.
-- Chat persistence is workspace-scoped.
+- API access is resolved by `requireAccess()` using:
+- user identity
+- tenant/workspace
+- app
+- role and permission (`read`, `write`, `private_read`)
+
+Identity resolution:
+- JWT mode (`AUTH_PROVIDER_MODE=jwt`): `Authorization: Bearer <supabase_jwt>`.
+- Compat mode (`AUTH_PROVIDER_MODE=compat`): header/query fallback for local dev.
+
+Scope resolution:
+- `x-workspace-id` / `workspace_id` query / default.
+- `x-app-id` / `app_id` query / default.
+- JWT `workspace_id` and `app_id` claims can fill defaults.
 
 ## 3) Gateway Proxy Controls (`/api/llm-gateway/*`)
 
@@ -37,11 +46,16 @@ Why:
 ## 4) Authentication Boundaries
 
 ### UBLX app API
-- mostly same-origin browser calls
-- workspace scoping is primary isolation primitive today
+- protected by app-level access checks
+- private routes (`/api/settings`, `/api/effective-config/*`, `/api/instance-configs/*`) require app_admin-level permissions
 
 ### Logline daemon proxy (`/api/logline/*`)
 - upstream daemon should enforce token/JWT auth
+
+### `/api/v1/*` auth/governance routes
+- onboarding routes validate Supabase JWTs
+- founder routes require explicit `founder` capability
+- CLI QR flow must use short-lived challenges and expiration checks
 
 ### LAB256 agent
 - protected by `AGENT_TOKEN`
@@ -86,7 +100,7 @@ If secret leakage suspected:
 
 ## 9) Immediate Security Backlog
 
-1. Signed identity -> workspace mapping (remove manual workspace trust).
-2. Add rate limiting for gateway proxy and sensitive endpoints.
-3. Add audit log for settings writes and auth events.
-4. Add secret scan automation in CI.
+1. Encrypt `user_provider_keys.encrypted_key` values at application layer with key rotation support.
+2. Add rate limiting for `/api/v1/cli/auth/*`, `/api/v1/founder/*`, and proxy endpoints.
+3. Add audit logging for `/api/settings` writes and auth mode transitions.
+4. Add CI secret scanning and policy checks for docs/examples.

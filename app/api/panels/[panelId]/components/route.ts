@@ -11,7 +11,7 @@ import {
   resolveAllowedPresetIds,
   resolveDefaultPresetId,
 } from '@/lib/layout/grid-presets';
-import { resolveWorkspaceId } from '@/lib/auth/workspace';
+import { AccessDeniedError, requireAccess } from '@/lib/auth/access';
 
 type Params = { params: Promise<{ panelId: string }> };
 const addComponentSchema = z.object({
@@ -22,12 +22,14 @@ const addComponentSchema = z.object({
 export async function GET(_req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
     await ensureDbSchema();
-    const workspaceId = resolveWorkspaceId(_req);
+    const access = await requireAccess(_req, 'read');
+    const workspaceId = access.workspaceId;
+    const appId = access.appId;
     const { panelId } = await params;
     const panel = await db
       .select({ panel_id: panels.panel_id })
       .from(panels)
-      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId)))
+      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)))
       .limit(1);
     if (panel.length === 0) return NextResponse.json([]);
 
@@ -58,6 +60,9 @@ export async function GET(_req: NextRequest, { params }: Params): Promise<NextRe
 
     return NextResponse.json(result);
   } catch (err) {
+    if (err instanceof AccessDeniedError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error('[GET /api/panels/:id/components]', err);
     return NextResponse.json({ error: 'Failed to fetch components' }, { status: 500 });
   }
@@ -68,12 +73,14 @@ export async function GET(_req: NextRequest, { params }: Params): Promise<NextRe
 export async function POST(req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
     await ensureDbSchema();
-    const workspaceId = resolveWorkspaceId(req);
+    const access = await requireAccess(req, 'write');
+    const workspaceId = access.workspaceId;
+    const appId = access.appId;
     const { panelId } = await params;
     const panel = await db
       .select({ panel_id: panels.panel_id })
       .from(panels)
-      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId)))
+      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)))
       .limit(1);
     if (panel.length === 0) {
       return NextResponse.json({ error: 'Panel not found in workspace' }, { status: 404 });
@@ -137,6 +144,9 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: 'Invalid request payload' }, { status: 400 });
+    }
+    if (err instanceof AccessDeniedError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
     }
     console.error('[POST /api/panels/:id/components]', err);
     return NextResponse.json({ error: 'Failed to add component' }, { status: 500 });

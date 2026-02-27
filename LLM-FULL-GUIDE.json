@@ -1,0 +1,1104 @@
+{
+  "meta": {
+    "doc_id": "SYSTEM_GUIDE_ZERO_TO_CONFIDENT",
+    "version": "2",
+    "date": "2026-02-27",
+    "root_path": "/Users/ubl-ops/UBLX App",
+    "logline_path": "/Users/ubl-ops/UBLX App/logline",
+    "ports": {
+      "ui_nextjs": 3000,
+      "logline_daemon": 7600
+    },
+    "primary_urls": {
+      "ui": "http://localhost:3000",
+      "api_base": "http://localhost:3000/api",
+      "daemon_base": "http://127.0.0.1:7600"
+    },
+    "assumptions": [
+      "Project code already exists at /Users/ubl-ops/UBLX App (no git clone steps).",
+      "Mac workstation conventions (Terminal, /Users/..., brew optional).",
+      "Primary persistence is Postgres via DATABASE_URL; SQLite may exist for daemon cache/outbox.",
+      "Local dev defaults: AUTH_PROVIDER_MODE=compat, RBAC_STRICT=0."
+    ]
+  },
+  "system_60s": {
+    "what_it_is": "UBLX is a browser-based ops dashboard (Next.js) backed by a Rust engine (logline) that handles identity/auth and heavier operations.",
+    "what_you_can_do_end": [
+      "Run the app locally (UI + API routes).",
+      "Optionally run the logline daemon and use the logline CLI.",
+      "Create tabs/panels and add components in the UI.",
+      "Set and debug settings via the 3-level cascade (app -> panel -> instance).",
+      "Choose and test auth modes (compat vs jwt; strict vs non-strict).",
+      "Run health checks and debug common failures."
+    ]
+  },
+  "big_picture": {
+    "analogy": {
+      "restaurant_mapping": {
+        "dining_room": "Browser UI at localhost:3000",
+        "kitchen_pass": "Next.js API layer at /api/*",
+        "kitchen": "Rust logline daemon at 127.0.0.1:7600"
+      }
+    },
+    "layers": [
+      {
+        "name": "UI",
+        "tech": "Next.js (React)",
+        "where": "http://localhost:3000",
+        "does": "Renders tabs/panels/components and calls API routes for data.",
+        "notable_files": [
+          "app/page.tsx",
+          "components/shell/AppShell.tsx",
+          "components/panel/GridCanvas.tsx",
+          "components/panel/ComponentRenderer.tsx"
+        ]
+      },
+      {
+        "name": "API",
+        "tech": "Next.js Route Handlers",
+        "where": "/Users/ubl-ops/UBLX App/app/api/*",
+        "does": "Handles browser requests, applies auth checks, reads/writes database, optionally forwards to logline.",
+        "data_format": "JSON"
+      },
+      {
+        "name": "Rust Engine",
+        "tech": "logline daemon + CLI",
+        "where": "Daemon listens on 127.0.0.1:7600; CLI runs from terminal",
+        "does": "Identity/auth-related operations, AI connections, runtime operations; exposes CLI commands."
+      }
+    ],
+    "core_concepts": [
+      {
+        "term": "localhost",
+        "definition": "Your own computer."
+      },
+      {
+        "term": "port",
+        "definition": "A numbered endpoint on your computer where a program listens (3000 for Next.js, 7600 for logline)."
+      }
+    ],
+    "data_flow": [
+      "User action in browser UI",
+      "UI calls a hook (example referenced: lib/api/db-hooks.ts)",
+      "Next.js API route at /api/* receives request",
+      "Auth is checked (compat header or jwt bearer)",
+      "Postgres read/write via DATABASE_URL",
+      "Optional call to logline daemon (when needed)",
+      "API returns JSON back to browser",
+      "UI updates"
+    ],
+    "persistence": {
+      "primary_store": "Postgres (via DATABASE_URL)",
+      "notes": [
+        "DATABASE_URL is a connection string (address + credentials).",
+        "Docs note a possible SQLite local cache/outbox (daemon-side)."
+      ]
+    }
+  },
+  "setup_from_zero": {
+    "concepts": [
+      {
+        "term": "terminal",
+        "definition": "A text window for running commands (macOS: Command+Space -> Terminal)."
+      },
+      {
+        "term": "path",
+        "definition": "A folder address on disk, e.g. /Users/ubl-ops/UBLX App; paths with spaces must be quoted in terminal."
+      }
+    ],
+    "procedures": [
+      {
+        "id": "setup.prereqs.check",
+        "title": "Check prerequisites",
+        "steps": [
+          {
+            "command": "node --version",
+            "run_from": "anywhere",
+            "what_it_does": "Checks Node.js is installed (required for Next.js).",
+            "success_looks_like": "v20.x.x or higher",
+            "if_it_fails": "Install Node.js LTS from nodejs.org; reopen Terminal."
+          },
+          {
+            "command": "npm --version",
+            "run_from": "anywhere",
+            "what_it_does": "Checks npm is installed (ships with Node).",
+            "success_looks_like": "a version string like 10.x.x",
+            "if_it_fails": "Reinstall Node.js LTS (npm is bundled)."
+          },
+          {
+            "command": "cargo --version",
+            "run_from": "anywhere",
+            "what_it_does": "Checks Rust/Cargo installed (required for logline).",
+            "success_looks_like": "cargo 1.xx.x ...",
+            "if_it_fails": "Install Rust via rustup.rs; reopen Terminal."
+          }
+        ],
+        "checkpoint": {
+          "success": "All three version commands return versions.",
+          "if_fails": "Install missing tools, then retry."
+        }
+      },
+      {
+        "id": "setup.cd.root",
+        "title": "Enter project folder",
+        "steps": [
+          {
+            "command": "cd \"/Users/ubl-ops/UBLX App\"",
+            "run_from": "anywhere",
+            "what_it_does": "Moves terminal into the repo root (required for npm commands).",
+            "success_looks_like": "Prompt shows you are inside UBLX App folder.",
+            "if_it_fails": "If 'No such file or directory', confirm the folder exists and the path is correct."
+          }
+        ],
+        "checkpoint": {
+          "success": "You are in /Users/ubl-ops/UBLX App.",
+          "if_fails": "Fix path; do not proceed until cd works."
+        }
+      },
+      {
+        "id": "setup.env.local",
+        "title": "Create .env.local from template",
+        "steps": [
+          {
+            "command": "cp \"/Users/ubl-ops/UBLX App/.env.example\" \"/Users/ubl-ops/UBLX App/.env.local\"",
+            "run_from": "/Users/ubl-ops/UBLX App",
+            "what_it_does": "Copies environment template into local config file.",
+            "success_looks_like": ".env.local exists in repo root",
+            "if_it_fails": "Verify .env.example exists; verify permissions."
+          }
+        ],
+        "required_fields_minimum": {
+          "DATABASE_URL": "postgresql://user:password@host/dbname?sslmode=require",
+          "DATABASE_URL_UNPOOLED": "usually same as DATABASE_URL unless separate provided",
+          "APP_URL": "http://localhost:3000",
+          "DEFAULT_WORKSPACE_ID": "default",
+          "DEFAULT_APP_ID": "ublx",
+          "DEFAULT_USER_ID": "local-dev",
+          "AUTH_PROVIDER_MODE": "compat",
+          "RBAC_STRICT": "0"
+        },
+        "checkpoint": {
+          "success": ".env.local exists and DATABASE_URL is filled in.",
+          "if_fails": "Missing/incorrect DATABASE_URL commonly causes blank UI and 500s on /api/*."
+        }
+      },
+      {
+        "id": "setup.npm.install",
+        "title": "Install JS dependencies",
+        "steps": [
+          {
+            "command": "npm install",
+            "run_from": "/Users/ubl-ops/UBLX App",
+            "what_it_does": "Installs JS dependencies into node_modules based on package.json.",
+            "success_looks_like": "Command completes; prints packages added.",
+            "if_it_fails": "Retry; fix permission issues; ensure Node/npm installed correctly."
+          }
+        ],
+        "checkpoint": {
+          "success": "node_modules populated; npm install exits successfully.",
+          "if_fails": "Review error lines (ENOENT, permission denied)."
+        }
+      },
+      {
+        "id": "setup.next.dev",
+        "title": "Start Next.js dev server",
+        "steps": [
+          {
+            "command": "npm run dev",
+            "run_from": "/Users/ubl-ops/UBLX App",
+            "what_it_does": "Starts the Next.js dev server on localhost:3000.",
+            "success_looks_like": "Terminal shows 'Local: http://localhost:3000' and 'Ready in ...s'.",
+            "if_it_fails": "Check for missing env vars, port in use, dependency issues."
+          }
+        ],
+        "checkpoint": {
+          "success": "Browser opens UI at http://localhost:3000.",
+          "if_fails": [
+            "Blank/dark UI: likely DATABASE_URL missing/wrong.",
+            "Browser cannot reach site: server didn't start; read terminal errors."
+          ]
+        }
+      },
+      {
+        "id": "setup.logline.daemon",
+        "title": "Start Rust logline daemon (optional for basic UI; required for auth/runtime operations)",
+        "steps": [
+          {
+            "command": "cd \"/Users/ubl-ops/UBLX App/logline\"",
+            "run_from": "anywhere",
+            "what_it_does": "Moves into logline workspace for cargo commands.",
+            "success_looks_like": "Prompt indicates logline folder.",
+            "if_it_fails": "Verify logline subfolder exists."
+          },
+          {
+            "command": "cargo check",
+            "run_from": "/Users/ubl-ops/UBLX App/logline",
+            "what_it_does": "Checks Rust code for compile errors without building binaries.",
+            "success_looks_like": "Finished ... with no errors.",
+            "if_it_fails": "Read Rust error paths and line numbers; fix or revert changes."
+          },
+          {
+            "command": "LOGLINE_DAEMON_TOKEN=dev-token cargo run -p logline-daemon -- --host 127.0.0.1 --port 7600",
+            "run_from": "/Users/ubl-ops/UBLX App/logline",
+            "what_it_does": "Builds and runs logline daemon on 127.0.0.1:7600 with token dev-token.",
+            "success_looks_like": "Logs include 'Listening on http://127.0.0.1:7600'.",
+            "if_it_fails": "Resolve compile errors; ensure port 7600 not in use."
+          }
+        ],
+        "checkpoint": {
+          "success": "Daemon listening on 127.0.0.1:7600.",
+          "if_fails": "Check cargo output; check port usage with lsof -i :7600."
+        }
+      },
+      {
+        "id": "setup.logline.cli.verify",
+        "title": "Verify CLI talks to daemon",
+        "steps": [
+          {
+            "command": "cd \"/Users/ubl-ops/UBLX App/logline\"\nLOGLINE_DAEMON_URL=http://127.0.0.1:7600 LOGLINE_DAEMON_TOKEN=dev-token \\\ncargo run -p logline-cli -- --json auth whoami",
+            "run_from": "anywhere (command includes cd)",
+            "what_it_does": "Runs logline CLI auth whoami against daemon.",
+            "success_looks_like": "JSON response with user_id local-dev (email may be null).",
+            "if_it_fails": "Verify daemon is running and token/url match."
+          }
+        ]
+      }
+    ]
+  },
+  "hands_on_30min": {
+    "steps": [
+      {
+        "id": "hands.open",
+        "title": "Open UI",
+        "do": ["Open http://localhost:3000 in browser"],
+        "checkpoint": {
+          "success": "UBLX interface loads (tab strip + grid/canvas).",
+          "if_fails": "Check server terminal; verify npm run dev running."
+        }
+      },
+      {
+        "id": "hands.tab.create",
+        "title": "Create a tab/panel",
+        "do": ["Click New Tab or +", "Name it (example: My First Panel)"],
+        "checkpoint": {
+          "success": "New tab appears in tab strip.",
+          "if_fails": "Open browser devtools Console (Inspect -> Console) for errors."
+        }
+      },
+      {
+        "id": "hands.add.component",
+        "title": "Add a component from Store",
+        "do": [
+          "Open Store in UI",
+          "Choose a component (examples: ChatAI, ObservabilityHub)",
+          "Add it to current panel"
+        ],
+        "checkpoint": {
+          "success": "Component appears on grid.",
+          "if_fails": "Confirm correct panel is selected; check console errors."
+        }
+      },
+      {
+        "id": "hands.resize",
+        "title": "Resize component using presets",
+        "do": ["Click size presets: S/M/L/XL/WIDE (names may vary)"],
+        "checkpoint": {
+          "success": "Component snaps to different grid sizes.",
+          "if_fails": "Try another component; check UI console."
+        }
+      },
+      {
+        "id": "hands.setting.persist",
+        "title": "Change a setting and verify persistence",
+        "do": [
+          "Open App Settings in UI",
+          "Change one value",
+          "Save",
+          "Reload page (Cmd+R)",
+          "Confirm value remains"
+        ],
+        "checkpoint": {
+          "success": "Setting persists after reload.",
+          "if_fails": "Likely DB write issue; check server terminal and browser console."
+        }
+      },
+      {
+        "id": "hands.api.health",
+        "title": "API health check (panels)",
+        "commands": [
+          {
+            "command": "curl -sS http://localhost:3000/api/panels | jq",
+            "run_from": "anywhere",
+            "what_it_does": "Calls panels API and formats JSON (jq optional).",
+            "success_looks_like": "JSON array (possibly empty []).",
+            "if_it_fails": "If jq missing, remove '| jq'. If API errors, see troubleshooting."
+          },
+          {
+            "command": "brew --version",
+            "run_from": "anywhere",
+            "what_it_does": "Checks Homebrew is installed (needed for brew install jq).",
+            "success_looks_like": "brew version string",
+            "if_it_fails": "Install Homebrew from brew.sh OR skip jq and remove '| jq'."
+          }
+        ]
+      },
+      {
+        "id": "hands.auth.compat.check",
+        "title": "Auth-related check (compat mode)",
+        "commands": [
+          {
+            "command": "curl -sS -H \"x-user-id: local-dev\" http://localhost:3000/api/settings | jq",
+            "run_from": "anywhere",
+            "what_it_does": "Calls settings endpoint as local-dev (compat auth via header).",
+            "success_looks_like": "JSON object (possibly empty {}).",
+            "if_it_fails": "Ensure AUTH_PROVIDER_MODE=compat and RBAC_STRICT=0; restart server."
+          }
+        ]
+      },
+      {
+        "id": "hands.validation.check",
+        "title": "One test/validation check",
+        "commands": [
+          {
+            "command": "cd \"/Users/ubl-ops/UBLX App\"\nnpm run lint",
+            "run_from": "anywhere (command includes cd)",
+            "what_it_does": "Runs lint checks for JS/TS code style and basic issues.",
+            "success_looks_like": "Exits with no errors.",
+            "if_it_fails": "Read file path + line number; fix then rerun."
+          }
+        ]
+      }
+    ]
+  },
+  "daily_workflow": {
+    "start_of_day": [
+      {
+        "name": "Terminal A: start UI/API server",
+        "commands": [
+          {
+            "command": "cd \"/Users/ubl-ops/UBLX App\"\nnpm run dev",
+            "run_from": "anywhere (command includes cd)",
+            "what_it_does": "Starts Next.js dev server.",
+            "success_looks_like": "Ready in Xs; UI at http://localhost:3000",
+            "if_it_fails": "Check port 3000; check env vars; npm install."
+          }
+        ]
+      },
+      {
+        "name": "Terminal B: start logline daemon (when needed)",
+        "commands": [
+          {
+            "command": "cd \"/Users/ubl-ops/UBLX App/logline\"\nLOGLINE_DAEMON_TOKEN=dev-token cargo run -p logline-daemon -- --host 127.0.0.1 --port 7600",
+            "run_from": "anywhere (command includes cd)",
+            "what_it_does": "Runs daemon on 7600.",
+            "success_looks_like": "Listening on http://127.0.0.1:7600",
+            "if_it_fails": "cargo check; lsof -i :7600; fix compile errors."
+          }
+        ]
+      },
+      {
+        "name": "Terminal C: quick health check",
+        "commands": [
+          {
+            "command": "curl -sS http://localhost:3000/api/panels | jq",
+            "run_from": "anywhere",
+            "what_it_does": "Confirms API + DB reachability.",
+            "success_looks_like": "JSON array",
+            "if_it_fails": "Read server terminal; likely DB or server down."
+          }
+        ]
+      }
+    ],
+    "during_work": {
+      "js_ts_changes": "Next.js hot reload usually applies automatically.",
+      "rust_changes": "Stop daemon (Ctrl+C) and rerun cargo run.",
+      "when_confused_order": [
+        "Read terminal error where npm run dev runs.",
+        "Read browser Console errors (Inspect -> Console).",
+        "Read daemon terminal logs (if running).",
+        "Run panels health check curl.",
+        "Restart dev server (Ctrl+C then npm run dev)."
+      ]
+    },
+    "end_of_day": {
+      "stop_services": "Ctrl+C in each terminal where a server/daemon runs.",
+      "optional_git": [
+        {
+          "command": "cd \"/Users/ubl-ops/UBLX App\"\ngit status",
+          "run_from": "anywhere (command includes cd)",
+          "what_it_does": "Shows modified files.",
+          "success_looks_like": "Lists changed files or 'clean' status.",
+          "if_it_fails": "Ensure git installed; ensure you are in repo root."
+        }
+      ]
+    }
+  },
+  "settings_cascade": {
+    "levels": [
+      {
+        "level": "app",
+        "scope": "global",
+        "endpoints": ["GET/PATCH /api/settings"],
+        "use_for": ["global defaults", "gateway urls", "shared secrets (keys)"]
+      },
+      {
+        "level": "panel",
+        "scope": "one tab/panel",
+        "endpoints": ["GET/PUT /api/panel-settings/:panelId"],
+        "use_for": ["overrides affecting all components inside one panel"]
+      },
+      {
+        "level": "instance",
+        "scope": "one component instance",
+        "endpoints": ["GET/PUT /api/instance-configs/:instanceId"],
+        "use_for": ["component-specific overrides"]
+      }
+    ],
+    "merge_rule": "More specific overrides more general (instance > panel > app).",
+    "debug_effective_config": {
+      "command": "curl -sS \"http://localhost:3000/api/effective-config/<instanceId>\" | jq",
+      "run_from": "anywhere",
+      "what_it_does": "Shows settings layers + merged effective settings + bindings + missing_required_tags.",
+      "success_looks_like": "JSON containing layers/effective/bindings fields.",
+      "if_it_fails": "Ensure server running; replace <instanceId> with real instance id."
+    },
+    "binding_tags": {
+      "definition": "Labels mapping settings to required component needs (e.g., secret:llm_gateway:key).",
+      "how_they_appear": "Effective config includes bindings and missing_required_tags.",
+      "common_mistakes": [
+        "Setting key doesn't match what component expects -> missing_required_tags not empty.",
+        "Instance overrides cause different behavior than other components.",
+        "Workspace mismatch affects whether settings apply."
+      ]
+    }
+  },
+  "auth": {
+    "definitions": {
+      "authentication": "Who you are.",
+      "authorization": "What you are allowed to do."
+    },
+    "modes": [
+      {
+        "mode": "compat",
+        "env": {
+          "AUTH_PROVIDER_MODE": "compat",
+          "RBAC_STRICT": "0"
+        },
+        "how_it_works": "API trusts x-user-id header (no cryptographic proof).",
+        "use_when": ["local development", "UI feature work", "basic testing"]
+      },
+      {
+        "mode": "jwt",
+        "env": {
+          "AUTH_PROVIDER_MODE": "jwt",
+          "RBAC_STRICT": "1",
+          "SUPABASE_JWT_SECRET": "required"
+        },
+        "how_it_works": "API requires Authorization: Bearer <jwt> (Supabase Auth token).",
+        "use_when": ["integration testing", "production", "auth feature work"]
+      }
+    ],
+    "verify_modes_exist": {
+      "command": "cd \"/Users/ubl-ops/UBLX App\"\ngrep 'AUTH_PROVIDER_MODE' .env.example",
+      "run_from": "anywhere (command includes cd)",
+      "what_it_does": "Shows the env var in template and its notes.",
+      "success_looks_like": "Lines referencing AUTH_PROVIDER_MODE and values.",
+      "if_it_fails": "Ensure .env.example exists; ensure grep available."
+    },
+    "rbac": {
+      "meaning": "Role-Based Access Control",
+      "roles": {
+        "tenant_roles": ["member", "admin"],
+        "app_roles": ["member", "app_admin"],
+        "special_capability": ["founder"]
+      },
+      "RBAC_STRICT": {
+        "0": "Auto-bootstrap local-dev with admin/app_admin roles (development friendly).",
+        "1": "No bootstrap; requires real DB records for users/memberships."
+      }
+    },
+    "recommended_progression": [
+      { "step": 1, "mode": "compat", "rbac_strict": 0, "goal": "Day-to-day local dev" },
+      { "step": 2, "mode": "compat", "rbac_strict": 1, "goal": "Validate DB records/permissions" },
+      { "step": 3, "mode": "jwt", "rbac_strict": 1, "goal": "Integration testing end-to-end" },
+      { "step": 4, "mode": "jwt", "rbac_strict": 1, "goal": "Production" }
+    ],
+    "errors": {
+      "401": {
+        "meaning": "Not authenticated (missing/invalid credentials).",
+        "compat_common": "Missing x-user-id header.",
+        "jwt_common": "Missing/expired/invalid Bearer token."
+      },
+      "403": {
+        "meaning": "Authenticated but not authorized (insufficient role/membership).",
+        "common": "User not member of tenant/app or missing app_admin role."
+      }
+    }
+  },
+  "testing_and_health": {
+    "healthy_means": [
+      "Next.js server responds",
+      "Database reachable",
+      "API routes return expected data",
+      "Auth mode behaves as expected",
+      "Logline daemon running when needed"
+    ],
+    "minimum_check": {
+      "command": "curl -sS http://localhost:3000/api/panels | jq",
+      "run_from": "anywhere",
+      "what_it_does": "Confirms server + DB by reading panels list.",
+      "success_looks_like": "JSON array (possibly empty).",
+      "if_it_fails": "Server down or DB unreachable; check npm run dev terminal."
+    },
+    "smoke_test_compat": {
+      "preconditions": ["AUTH_PROVIDER_MODE=compat", "RBAC_STRICT=0", "server running"],
+      "commands": [
+        {
+          "command": "curl -sS http://localhost:3000/api/panels | jq",
+          "run_from": "anywhere",
+          "what_it_does": "Panels read (DB read).",
+          "success_looks_like": "[] or list of panels",
+          "if_it_fails": "Check server logs; DB config."
+        },
+        {
+          "command": "curl -sS -H \"x-user-id: local-dev\" http://localhost:3000/api/settings | jq",
+          "run_from": "anywhere",
+          "what_it_does": "Settings read with compat auth header.",
+          "success_looks_like": "{} or settings object",
+          "if_it_fails": "Ensure compat mode active; restart server."
+        },
+        {
+          "command": "curl -sS -X POST http://localhost:3000/api/v1/cli/auth/challenge -H \"content-type: application/json\" -d '{}' | jq",
+          "run_from": "anywhere",
+          "what_it_does": "Tests CLI auth challenge endpoint.",
+          "success_looks_like": "JSON includes challenge_id, nonce, expires_at, challenge_url",
+          "if_it_fails": "Check server logs; verify route exists."
+        }
+      ]
+    },
+    "strict_jwt_mode_test": {
+      "start_server_strict": {
+        "command": "cd \"/Users/ubl-ops/UBLX App\"\n# stop current server with Ctrl+C first\nAUTH_PROVIDER_MODE=jwt RBAC_STRICT=1 npm run dev",
+        "run_from": "anywhere (command includes cd)",
+        "what_it_does": "Starts server enforcing JWT and strict RBAC.",
+        "success_looks_like": "Ready in Xs",
+        "if_it_fails": "Ensure .env.local exists; ensure correct working directory."
+      },
+      "expected_without_token": [
+        {
+          "command": "curl -i http://localhost:3000/api/settings",
+          "run_from": "anywhere",
+          "what_it_does": "Calls protected route without credentials.",
+          "success_looks_like": "HTTP 401",
+          "if_it_fails": "If 200, auth not enforced; verify env and restart."
+        },
+        {
+          "command": "curl -i http://localhost:3000/api/v1/auth/onboard/claim -X POST -H \"content-type: application/json\" -d '{}'",
+          "run_from": "anywhere",
+          "what_it_does": "Calls onboarding claim without token.",
+          "success_looks_like": "HTTP 401",
+          "if_it_fails": "If 200, auth not enforced; verify env and restart."
+        }
+      ]
+    },
+    "code_quality": {
+      "nextjs": [
+        {
+          "command": "cd \"/Users/ubl-ops/UBLX App\"\nnpm run lint",
+          "run_from": "anywhere (command includes cd)",
+          "what_it_does": "Lint checks for code style errors.",
+          "success_looks_like": "No errors.",
+          "if_it_fails": "Fix listed file/line issues."
+        },
+        {
+          "command": "cd \"/Users/ubl-ops/UBLX App\"\nnpm run build",
+          "run_from": "anywhere (command includes cd)",
+          "what_it_does": "Builds project; surfaces TypeScript errors.",
+          "success_looks_like": "Compiled successfully",
+          "if_it_fails": "Fix file/line errors; rerun."
+        }
+      ],
+      "rust": [
+        {
+          "command": "cd \"/Users/ubl-ops/UBLX App/logline\"\ncargo check --workspace",
+          "run_from": "anywhere (command includes cd)",
+          "what_it_does": "Checks entire Rust workspace compile.",
+          "success_looks_like": "Finished with no errors.",
+          "if_it_fails": "Fix Rust compile errors (paths/line numbers shown)."
+        },
+        {
+          "command": "cd \"/Users/ubl-ops/UBLX App/logline\"\ncargo test --workspace",
+          "run_from": "anywhere (command includes cd)",
+          "what_it_does": "Runs Rust tests.",
+          "success_looks_like": "test result: ok; 0 failed",
+          "if_it_fails": "Inspect failing tests; run git diff for recent changes."
+        }
+      ]
+    },
+    "pass_criteria": [
+      "npm run lint passes",
+      "npm run build passes",
+      "cargo check --workspace passes",
+      "cargo test --workspace passes",
+      "compat smoke test passes",
+      "strict jwt test returns 401 without token",
+      "no unexpected 500s on baseline API calls"
+    ]
+  },
+  "troubleshooting": {
+    "problems": [
+      {
+        "id": 1,
+        "symptom": "Browser shows only dark/blank screen at http://localhost:3000",
+        "likely_cause": "Database not connected (DATABASE_URL wrong/missing/unreachable).",
+        "fix_steps": [
+          "Check server terminal for postgres/db/ECONNREFUSED errors.",
+          "Run: curl -i http://localhost:3000/api/panels",
+          "Fix DATABASE_URL in .env.local",
+          "Confirm Supabase project running",
+          "Restart server: Ctrl+C then npm run dev"
+        ]
+      },
+      {
+        "id": 2,
+        "symptom": "command not found: npm",
+        "likely_cause": "Node.js not installed or not in PATH.",
+        "fix_steps": [
+          "Install Node.js LTS from nodejs.org",
+          "Reopen Terminal",
+          "Verify node --version",
+          "Retry npm install"
+        ]
+      },
+      {
+        "id": 3,
+        "symptom": "command not found: cargo",
+        "likely_cause": "Rust not installed.",
+        "fix_steps": [
+          "Install Rust from rustup.rs",
+          "Reopen Terminal",
+          "Verify cargo --version"
+        ]
+      },
+      {
+        "id": 4,
+        "symptom": "API returns 401 Unauthorized",
+        "likely_cause": "Running jwt/strict without token; or missing header in compat mode.",
+        "fix_steps": [
+          "For dev: set AUTH_PROVIDER_MODE=compat and RBAC_STRICT=0 in .env.local",
+          "Restart server",
+          "Retry with header: -H \"x-user-id: local-dev\""
+        ]
+      },
+      {
+        "id": 5,
+        "symptom": "API returns 403 Forbidden",
+        "likely_cause": "User lacks membership/role (needs app_admin) or not in tenant/app.",
+        "fix_steps": [
+          "For dev: set RBAC_STRICT=0 to auto-bootstrap local-dev",
+          "Restart server",
+          "For jwt/real user: create app_memberships with role app_admin"
+        ]
+      },
+      {
+        "id": 6,
+        "symptom": "cargo check shows compile errors",
+        "likely_cause": "Rust type/import error introduced by changes.",
+        "fix_steps": [
+          "Read error message for file:line",
+          "Open file at line and fix",
+          "If unsure: git status, git diff to identify changes"
+        ]
+      },
+      {
+        "id": 7,
+        "symptom": "npm run dev fails immediately",
+        "likely_cause": "TypeScript error, missing module, missing env var, or port in use.",
+        "fix_steps": [
+          "Read terminal error for file/line",
+          "If cannot find module: npm install",
+          "If env missing: verify .env.local",
+          "If port in use: resolve port 3000 conflict (see problem 13)"
+        ]
+      },
+      {
+        "id": 8,
+        "symptom": "Settings save but do not affect components",
+        "likely_cause": "Workspace mismatch, missing required tags, or wrong binding key.",
+        "fix_steps": [
+          "Get instanceId",
+          "curl effective-config: /api/effective-config/<instanceId>",
+          "Check missing_required_tags and bindings",
+          "Verify DEFAULT_WORKSPACE_ID matches current workspace"
+        ]
+      },
+      {
+        "id": 9,
+        "symptom": "Chat component says 401 Invalid API key",
+        "conditional": true,
+        "skip_if": "You are not using agent onboarding flow; you set API key manually.",
+        "likely_cause": "Gateway API key missing/stale/wrong key source.",
+        "fix_steps": [
+          "Confirm llm_gateway_api_key in App Settings",
+          "Check for stale LLM_GATEWAY_KEY env var conflicts",
+          "Agent onboarding only: ensure CLI_JWT valid",
+          "Agent onboarding only: run agent health check (referenced in doc)"
+        ]
+      },
+      {
+        "id": 10,
+        "symptom": "Chat returns 502 upstream_error",
+        "conditional": true,
+        "skip_if": "Not using PM2/gateway setup (see docs/OPERATIONS.md).",
+        "likely_cause": "Upstream AI provider unavailable or misconfigured gateway backend.",
+        "fix_steps": [
+          "PM2/gateway only: pm2 logs llm-gateway --lines 120 --nostream",
+          "Check provider status/credits",
+          "Ollama only: ollama list",
+          "PM2/gateway only: reduce unhealthy candidates in gateway config"
+        ]
+      },
+      {
+        "id": 11,
+        "symptom": "Chat hangs / request times out",
+        "conditional": true,
+        "skip_if": "Not using PM2/gateway setup (see docs/OPERATIONS.md).",
+        "likely_cause": "Gateway retrying many unavailable backends.",
+        "fix_steps": [
+          "Cancel/wait for timeout",
+          "PM2/gateway only: set LLM_GATEWAY_MODE to known healthy backend",
+          "PM2 only: pm2 restart llm-gateway --update-env"
+        ]
+      },
+      {
+        "id": 12,
+        "symptom": "Page loads but components missing or wrong",
+        "likely_cause": "Wrong workspace ID.",
+        "fix_steps": [
+          "Check DEFAULT_WORKSPACE_ID in .env.local",
+          "curl /api/panels to confirm data exists",
+          "Check browser localStorage.ublx_workspace_id in devtools Application tab"
+        ]
+      },
+      {
+        "id": 13,
+        "symptom": "Port 3000 already in use (EADDRINUSE)",
+        "likely_cause": "Another process is already listening on port 3000.",
+        "fix_steps": [
+          "Option 1: npx kill-port 3000",
+          "Option 2: lsof -i :3000 | grep LISTEN; kill <PID>",
+          "Retry: npm run dev"
+        ],
+        "success_looks_like": "Server starts and prints Ready in Xs",
+        "extra_checks": ["If lsof shows nothing, retry npm run dev (port may have freed)."]
+      },
+      {
+        "id": 14,
+        "symptom": "Rust daemon not accepting requests (connection refused on 7600)",
+        "likely_cause": "Daemon not running, wrong port, or port conflict.",
+        "fix_steps": [
+          "Confirm daemon terminal says Listening on 127.0.0.1:7600",
+          "Check errors in daemon terminal",
+          "lsof -i :7600 to check port usage",
+          "Verify command includes --port 7600"
+        ]
+      },
+      {
+        "id": 15,
+        "symptom": "logline auth login --qr shows QR but never completes",
+        "likely_cause": "Challenge expired, not scanned with authenticated session, or URL inaccessible.",
+        "fix_steps": [
+          "Rerun (challenge expires in minutes)",
+          "Scan with session already logged in to web app",
+          "Approve in web app after scanning",
+          "If phone cannot access URL: daemon URL not reachable externally"
+        ]
+      },
+      {
+        "id": 16,
+        "symptom": "PM2 restart but behavior unchanged",
+        "conditional": true,
+        "skip_if": "Not using PM2 (see docs/OPERATIONS.md).",
+        "likely_cause": "PM2 cached env values.",
+        "fix_steps": ["pm2 restart <process-name> --update-env"]
+      },
+      {
+        "id": 17,
+        "symptom": "npm run build fails with TypeScript errors",
+        "likely_cause": "Type mismatch introduced by changes.",
+        "fix_steps": [
+          "Read error for file:line",
+          "Fix type issue",
+          "Rerun npm run build"
+        ]
+      },
+      {
+        "id": 18,
+        "symptom": "DB writes succeed but reads show old data",
+        "likely_cause": "Caching or workspace scope mismatch.",
+        "fix_steps": [
+          "Hard reload browser (Cmd+Shift+R)",
+          "Ensure read/write use same x-workspace-id",
+          "Use curl to inspect settings/effective-config directly"
+        ]
+      },
+      {
+        "id": 19,
+        "symptom": "supabase CLI not found",
+        "likely_cause": "Supabase CLI not installed; brew may be missing.",
+        "fix_steps": [
+          "Check brew --version",
+          "If missing: install brew from brew.sh",
+          "Install: brew install supabase/tap/supabase",
+          "Verify: supabase version"
+        ]
+      },
+      {
+        "id": 20,
+        "symptom": "App was working, now nothing loads",
+        "likely_cause": "Regression, env change, server crash, or DB issue.",
+        "fix_steps": [
+          "Check server terminal errors",
+          "curl /api/panels",
+          "Restart server (Ctrl+C -> npm run dev)",
+          "Verify .env.local still present and correct",
+          "git status to see changes",
+          "npm run lint",
+          "npm run build"
+        ]
+      },
+      {
+        "id": 21,
+        "symptom": "cargo run is very slow",
+        "likely_cause": "First Rust compile or large rebuild.",
+        "fix_steps": [
+          "Expect 2-5 minutes first build; faster later",
+          "Ensure you are in /Users/ubl-ops/UBLX App/logline to avoid unnecessary rebuild patterns"
+        ]
+      },
+      {
+        "id": 22,
+        "symptom": "jq: command not found",
+        "likely_cause": "jq not installed.",
+        "fix_steps": [
+          "Check brew --version",
+          "If brew exists: brew install jq",
+          "If brew missing: install brew from brew.sh then brew install jq",
+          "Fastest: remove '| jq' and rerun commands"
+        ]
+      }
+    ]
+  },
+  "verification_snippets": [
+    {
+      "claim": "package.json uses @types/node: ^20",
+      "command": "cd \"/Users/ubl-ops/UBLX App\"\ngrep '\"@types/node\"' package.json",
+      "run_from": "anywhere (command includes cd)"
+    },
+    {
+      "claim": ".env.example sets AUTH_PROVIDER_MODE default (jwt vs compat guidance)",
+      "command": "cd \"/Users/ubl-ops/UBLX App\"\ngrep 'AUTH_PROVIDER_MODE' .env.example",
+      "run_from": "anywhere (command includes cd)"
+    },
+    {
+      "claim": "Primary DB is Postgres (DATABASE_URL); SQLite dependency may exist",
+      "command": "cd \"/Users/ubl-ops/UBLX App\"\ngrep 'DATABASE_URL' .env.example\ngrep 'better-sqlite3' package.json",
+      "run_from": "anywhere (command includes cd)"
+    },
+    {
+      "claim": "Renderer file name in components/panel",
+      "command": "cd \"/Users/ubl-ops/UBLX App\"\nls components/panel/ | grep -i renderer",
+      "run_from": "anywhere (command includes cd)"
+    }
+  ],
+  "glossary": {
+    "minimum_30_terms": [
+      { "term": "API", "definition": "A defined way for one program to request data/action from another; here, Next.js API routes." },
+      { "term": "API route", "definition": "A server endpoint like /api/panels that returns data or performs an action." },
+      { "term": "Auth", "definition": "Authentication + authorization: who you are and what you can do." },
+      { "term": "Authentication", "definition": "Proving identity." },
+      { "term": "Authorization", "definition": "Checking permissions for an action." },
+      { "term": "app_admin", "definition": "App role granting write access to app settings/configs." },
+      { "term": "Bearer token", "definition": "Credential in Authorization header: Bearer <token>." },
+      { "term": "Binding tag", "definition": "A label mapping settings to component requirements (e.g., secret:llm_gateway:key)." },
+      { "term": "Cargo", "definition": "Rust build tool/package manager." },
+      { "term": "cargo check", "definition": "Rust compile check without producing binaries." },
+      { "term": "CLI", "definition": "Command-line interface for running commands in terminal." },
+      { "term": "Component", "definition": "A UI widget placed on a panel (chat, monitoring, etc.)." },
+      { "term": "Compat mode", "definition": "Dev auth mode using x-user-id header (AUTH_PROVIDER_MODE=compat)." },
+      { "term": "curl", "definition": "Tool to send HTTP requests from terminal." },
+      { "term": "Daemon", "definition": "A background process that stays running and serves requests (logline daemon)." },
+      { "term": "DATABASE_URL", "definition": "Connection string env var for Postgres database." },
+      { "term": "Drizzle ORM", "definition": "TypeScript library used to work with the database in code." },
+      { "term": "env var", "definition": "Environment variable: a named config value programs read." },
+      { "term": "Effective config", "definition": "Merged settings after cascade (app+panel+instance) for one component." },
+      { "term": "founder", "definition": "Special capability requiring cryptographic signatures for protected ops." },
+      { "term": "Git", "definition": "Version control system tracking code changes." },
+      { "term": "HTTP", "definition": "Web request protocol; methods include GET/POST/PATCH/PUT." },
+      { "term": "instance", "definition": "One specific placed copy of a component on a panel." },
+      { "term": "jq", "definition": "JSON formatter/query tool for terminal output." },
+      { "term": "JSON", "definition": "Structured text data format like {\"key\":\"value\"}." },
+      { "term": "JWT", "definition": "Signed token proving identity; used in AUTH_PROVIDER_MODE=jwt." },
+      { "term": "localhost", "definition": "Address meaning 'this computer'." },
+      { "term": "member", "definition": "Basic role allowing use but not admin changes." },
+      { "term": "Migration", "definition": "Database schema change script." },
+      { "term": "Next.js", "definition": "Framework powering the UI and API routes." },
+      { "term": "npm", "definition": "Node Package Manager; installs JS deps and runs scripts." },
+      { "term": "Panel", "definition": "A tab/work area in UBLX containing components." },
+      { "term": "PM2", "definition": "Process manager used to keep services running (production/ops setups)." },
+      { "term": "Port", "definition": "Numbered endpoint on a computer where programs listen." },
+      { "term": "Process", "definition": "A running program started by a command." },
+      { "term": "Postgres", "definition": "Database system used for persistent storage here." },
+      { "term": "RBAC", "definition": "Role-Based Access Control: permissions based on roles." },
+      { "term": "RBAC_STRICT", "definition": "0 auto-bootstraps local-dev; 1 requires real membership records." },
+      { "term": "React", "definition": "UI library used by Next.js for components." },
+      { "term": "React Query", "definition": "Browser data-fetching/caching library referenced for updating UI." },
+      { "term": "Route", "definition": "Server handler file under app/api mapping to a URL path." },
+      { "term": "Rust", "definition": "Systems language used for logline daemon/cli." },
+      { "term": "Settings cascade", "definition": "App -> panel -> instance settings merge; specific overrides general." },
+      { "term": "Supabase", "definition": "Hosted Postgres + Auth (JWT) provider used by the system." },
+      { "term": "Tenant", "definition": "Organization/workspace scope in multi-tenant model." },
+      { "term": "Terminal", "definition": "Text app for running commands." },
+      { "term": "Token", "definition": "String credential granting access (JWT or daemon token)." },
+      { "term": "TypeScript", "definition": "Typed JavaScript used in the Next.js app." },
+      { "term": "Workspace", "definition": "Namespace for data; controlled by DEFAULT_WORKSPACE_ID/x-workspace-id." },
+      { "term": "x-user-id", "definition": "Header for compat mode identity, e.g. x-user-id: local-dev." },
+      { "term": "x-workspace-id", "definition": "Header selecting workspace; default from DEFAULT_WORKSPACE_ID." }
+    ]
+  },
+  "learning_path": {
+    "week_1": [
+      {
+        "days": "1-2",
+        "goal": "Architecture and settings",
+        "read_next": [
+          "/Users/ubl-ops/UBLX App/docs/ARCHITECTURE.md",
+          "/Users/ubl-ops/UBLX App/docs/SETTINGS_CASCADE.md"
+        ],
+        "milestone": "Explain layers and effective config."
+      },
+      {
+        "days": "3-4",
+        "goal": "API contracts and auth",
+        "read_next": [
+          "/Users/ubl-ops/UBLX App/docs/API_CONTRACTS.md",
+          "/Users/ubl-ops/UBLX App/docs/RBAC_MODEL.md"
+        ],
+        "milestone": "Know which endpoints and permissions apply to features."
+      },
+      {
+        "days": "5",
+        "goal": "Auth plan deep dive",
+        "read_next": ["/Users/ubl-ops/UBLX App/docs/AUTH_PERMANENT_PLAN.md"],
+        "milestone": "Understand compat as bridge to full JWT auth."
+      }
+    ],
+    "week_2": [
+      {
+        "days": "6-7",
+        "goal": "Operations and troubleshooting",
+        "read_next": [
+          "/Users/ubl-ops/UBLX App/docs/OPERATIONS.md",
+          "/Users/ubl-ops/UBLX App/docs/TROUBLESHOOTING.md",
+          "/Users/ubl-ops/UBLX App/docs/TESTING.md"
+        ],
+        "milestone": "Run smoke tests and interpret them."
+      },
+      {
+        "days": "8-9",
+        "goal": "Rust engine and CLI",
+        "read_next": [
+          "/Users/ubl-ops/UBLX App/docs/logline-cli/ARCHITECTURE.md",
+          "/Users/ubl-ops/UBLX App/logline/crates/logline-cli/src/main.rs"
+        ],
+        "milestone": "Run logline CLI commands and understand their intent."
+      },
+      {
+        "days": "10",
+        "goal": "Deployment",
+        "read_next": ["/Users/ubl-ops/UBLX App/docs/DEPLOYMENT.md"],
+        "milestone": "Understand local vs hosted topologies."
+      }
+    ]
+  },
+  "only_remember_5": [
+    "Two separate programs: Next.js (3000) and logline daemon (7600).",
+    "Run commands from correct folder: npm in repo root; cargo in logline subfolder.",
+    "Local dev defaults: compat + RBAC_STRICT=0; jwt + strict for real auth testing/production.",
+    "Settings cascade: app -> panel -> instance; most specific wins; debug with effective-config.",
+    "When broken: read server terminal first, then browser console, then run curl health checks."
+  ],
+  "confidence_checklist": {
+    "setup_and_start": [
+      "Open Terminal and cd into /Users/ubl-ops/UBLX App",
+      "Check node/npm/cargo versions",
+      "Create .env.local and set DATABASE_URL",
+      "Run npm install",
+      "Run npm run dev and open localhost:3000",
+      "Start logline daemon in second terminal",
+      "Stop services with Ctrl+C"
+    ],
+    "ui_ops": [
+      "Create a panel/tab",
+      "Add a component from Store",
+      "Resize a component",
+      "Change a setting and confirm it persists after reload"
+    ],
+    "api_checks": [
+      "Run curl panels health check and interpret JSON array",
+      "Run compat smoke test (panels/settings/challenge)",
+      "Explain what 401 means and fix for dev",
+      "Explain what 403 means and fix for dev",
+      "Fetch effective config for an instanceId"
+    ],
+    "auth_understanding": [
+      "Explain compat vs jwt",
+      "Explain RBAC_STRICT=0 bootstrap behavior",
+      "Explain tenant role vs app role; what app_admin enables"
+    ],
+    "troubleshooting_habits": [
+      "Check server terminal first",
+      "Check browser devtools console",
+      "Diagnose blank screen as DB connection issue",
+      "Restart dev server when needed",
+      "Use troubleshooting problems list by symptom"
+    ]
+  },
+  "conflicts_and_assumptions": {
+    "conflicts_found": [
+      {
+        "id": 1,
+        "topic": "Node.js version requirement",
+        "conflict": "Some docs say Node 18+ vs others say Node 20+.",
+        "most_likely_correct": "Node 20+",
+        "how_to_verify": "grep '\"@types/node\"' package.json (look for ^20)."
+      },
+      {
+        "id": 2,
+        "topic": "Default AUTH_PROVIDER_MODE in .env.example",
+        "conflict": ".env.example defaults to jwt but onboarding docs recommend compat for local dev.",
+        "most_likely_correct": "jwt is production default; compat is recommended local override.",
+        "how_to_verify": "grep AUTH_PROVIDER_MODE .env.example"
+      },
+      {
+        "id": 3,
+        "topic": "Database type (Postgres vs SQLite)",
+        "conflict": "Some beginner text references SQLite as main DB; other docs specify Postgres/Supabase; package.json includes better-sqlite3.",
+        "most_likely_correct": "Primary persistence is Postgres; SQLite likely local cache/outbox for daemon.",
+        "how_to_verify": "grep DATABASE_URL .env.example; grep better-sqlite3 package.json"
+      },
+      {
+        "id": 4,
+        "topic": "Renderer filename",
+        "conflict": "Docs mention ComponentRenderer.tsx but repo may have PanelRenderer.tsx.",
+        "most_likely_correct": "Renamed to PanelRenderer.tsx; older docs not updated.",
+        "how_to_verify": "ls components/panel/ | grep -i renderer"
+      }
+    ],
+    "docs_to_update_later": [
+      "UBLX — Beginner's Guide (Detailed Edit.md): clarify Postgres vs SQLite; update renderer filename if renamed.",
+      "LLM_START_HERE.md: update renderer filename references if needed.",
+      ".env.example: clarify production defaults vs local dev overrides."
+    ]
+  }
+}

@@ -88,7 +88,11 @@ pub fn derive_tenant(host: Option<&str>, claims: &Value, cfg: &TenantConfig) -> 
         (t, _) => t,
     };
 
-    let source = if tenant_id.is_some() { source } else { TenantSource::None };
+    let source = if tenant_id.is_some() {
+        source
+    } else {
+        TenantSource::None
+    };
 
     TenantDecision { tenant_id, source }
 }
@@ -122,7 +126,10 @@ fn derive_from_host(host: &str, host_root: Option<&str>) -> Option<String> {
     let tenant = prefix.split('.').last()?.to_string();
 
     // Basic sanity: [a-z0-9-]
-    if tenant.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+    if tenant
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
         Some(tenant)
     } else {
         None
@@ -131,7 +138,10 @@ fn derive_from_host(host: &str, host_root: Option<&str>) -> Option<String> {
 
 fn derive_from_claims(claims: &Value, claim_key: Option<&str>) -> Option<String> {
     let key = claim_key?;
-    claims.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
+    claims
+        .get(key)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 #[cfg(test)]
@@ -140,8 +150,14 @@ mod tests {
 
     #[test]
     fn tenant_from_host() {
-        assert_eq!(derive_from_host("acme.example.com", Some("example.com")), Some("acme".to_string()));
-        assert_eq!(derive_from_host("foo.acme.example.com", Some("example.com")), Some("acme".to_string()));
+        assert_eq!(
+            derive_from_host("acme.example.com", Some("example.com")),
+            Some("acme".to_string())
+        );
+        assert_eq!(
+            derive_from_host("foo.acme.example.com", Some("example.com")),
+            Some("acme".to_string())
+        );
         assert_eq!(derive_from_host("example.com", Some("example.com")), None);
     }
 

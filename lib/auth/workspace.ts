@@ -15,3 +15,7 @@ export function resolveWorkspaceId(req: NextRequest): string {
 export function toScopedKey(workspaceId: string, key: string): string {
   return `ws:${workspaceId}:${key}`;
 }
+
+export function toScopedAppKey(workspaceId: string, appId: string, key: string): string {
+  return `ws:${workspaceId}:app:${appId}:${key}`;
+}

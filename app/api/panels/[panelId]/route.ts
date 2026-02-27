@@ -3,7 +3,7 @@ import { db } from '@/db/index';
 import { ensureDbSchema } from '@/db/bootstrap';
 import { panels } from '@/db/schema';
 import { and, eq } from 'drizzle-orm';
-import { resolveWorkspaceId } from '@/lib/auth/workspace';
+import { AccessDeniedError, requireAccess } from '@/lib/auth/access';
 
 type Params = { params: Promise<{ panelId: string }> };
 
@@ -12,7 +12,9 @@ type Params = { params: Promise<{ panelId: string }> };
 export async function PATCH(req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
     await ensureDbSchema();
-    const workspaceId = resolveWorkspaceId(req);
+    const access = await requireAccess(req, 'write');
+    const workspaceId = access.workspaceId;
+    const appId = access.appId;
     const { panelId } = await params;
     const body = await req.json() as { name?: string; position?: number };
 
@@ -23,10 +25,13 @@ export async function PATCH(req: NextRequest, { params }: Params): Promise<NextR
     await db
       .update(panels)
       .set(updates)
-      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId)));
+      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)));
 
     return NextResponse.json({ ok: true });
   } catch (err) {
+    if (err instanceof AccessDeniedError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error('[PATCH /api/panels/:id]', err);
     return NextResponse.json({ error: 'Failed to update panel' }, { status: 500 });
   }
@@ -37,13 +42,18 @@ export async function PATCH(req: NextRequest, { params }: Params): Promise<NextR
 export async function DELETE(_req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
     await ensureDbSchema();
-    const workspaceId = resolveWorkspaceId(_req);
+    const access = await requireAccess(_req, 'write');
+    const workspaceId = access.workspaceId;
+    const appId = access.appId;
     const { panelId } = await params;
     await db
       .delete(panels)
-      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId)));
+      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)));
     return NextResponse.json({ ok: true });
   } catch (err) {
+    if (err instanceof AccessDeniedError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error('[DELETE /api/panels/:id]', err);
     return NextResponse.json({ error: 'Failed to delete panel' }, { status: 500 });
   }

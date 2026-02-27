@@ -2,7 +2,11 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import * as schema from './schema';
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgres@127.0.0.1:5432/postgres';
+const connectionString =
+  process.env.DATABASE_URL ??
+  process.env.DATABASE_URL_UNPOOLED ??
+  process.env.POSTGRES_URL ??
+  'postgresql://127.0.0.1:5432/postgres';
 
 const client = postgres(connectionString, {
   prepare: false,

@@ -1,52 +1,64 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db/index';
-import { ensureDbSchema } from '@/db/bootstrap';
-import { serviceStatusLog } from '@/db/schema';
-import { desc } from 'drizzle-orm';
+import { callLogline } from '@/lib/api/logline-client';
 
-// GET /api/status-log?limit=50
+// GET /api/status-log
+// Rust-owned endpoint: proxy request to logline-daemon /v1/status-log.
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  const search = req.nextUrl.search || '';
   try {
-    await ensureDbSchema();
-    const limitParam = req.nextUrl.searchParams.get('limit');
-    const limit = Math.min(parseInt(limitParam ?? '50', 10), 500);
+    const upstream = await callLogline(req, `/v1/status-log${search}`, 'GET');
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const text = await upstream.text();
 
-    const rows = await db
-      .select()
-      .from(serviceStatusLog)
-      .orderBy(desc(serviceStatusLog.recorded_at))
-      .limit(limit)
-      ;
-
-    return NextResponse.json(rows);
-  } catch (err) {
-    console.error('[GET /api/status-log]', err);
-    return NextResponse.json({ error: 'Failed to fetch status log' }, { status: 500 });
+    return new NextResponse(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+      },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Failed to reach logline daemon',
+        detail: error instanceof Error ? error.message : 'unknown error',
+      },
+      { status: 502 }
+    );
   }
 }
 
 // POST /api/status-log
-// Body: { service_name: string; status: string; latency_ms?: number }
+// Rust-owned endpoint: proxy request to logline-daemon /v1/status-log.
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const search = req.nextUrl.search || '';
+
+  let body: unknown;
   try {
-    await ensureDbSchema();
-    const body = await req.json() as {
-      service_name: string;
-      status:       string;
-      latency_ms?:  number;
-    };
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
 
-    const row = {
-      service_name: body.service_name,
-      status:       body.status,
-      latency_ms:   body.latency_ms ?? null,
-      recorded_at:  new Date(),
-    };
+  try {
+    const upstream = await callLogline(req, `/v1/status-log${search}`, 'POST', body);
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const text = await upstream.text();
 
-    await db.insert(serviceStatusLog).values(row);
-    return NextResponse.json({ ok: true }, { status: 201 });
-  } catch (err) {
-    console.error('[POST /api/status-log]', err);
-    return NextResponse.json({ error: 'Failed to log status' }, { status: 500 });
+    return new NextResponse(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+      },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Failed to reach logline daemon',
+        detail: error instanceof Error ? error.message : 'unknown error',
+      },
+      { status: 502 }
+    );
   }
 }

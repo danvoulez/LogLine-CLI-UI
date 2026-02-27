@@ -16,6 +16,10 @@ tokio = { version = "1.48", features = ["rt-multi-thread", "macros", "net"] }
 serde_json.workspace = true
 serde.workspace = true
 rand = "0.9"
+tokio-postgres = "0.7"
+base64 = "0.22"
+hex = "0.4"
+ring = "0.17"
 logline-api = { path = "../logline-api" }
 logline-auth = { path = "../logline-auth" }
 logline-core = { path = "../logline-core" }

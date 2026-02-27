@@ -73,12 +73,19 @@ fn cookie_name(opts: &CookieOptions) -> Result<String> {
     if opts.use_host_prefix && opts.domain.is_none() {
         // Enforce __Host- cookie requirements.
         if opts.path != "/" {
-            return Err(Error::Validation("__Host- cookies must have Path=/".to_string()));
+            return Err(Error::Validation(
+                "__Host- cookies must have Path=/".to_string(),
+            ));
         }
         if !opts.secure {
-            return Err(Error::Validation("__Host- cookies must be Secure".to_string()));
+            return Err(Error::Validation(
+                "__Host- cookies must be Secure".to_string(),
+            ));
         }
-        Ok(format!("__Host-{}", opts.name.trim_start_matches("__Host-")))
+        Ok(format!(
+            "__Host-{}",
+            opts.name.trim_start_matches("__Host-")
+        ))
     } else {
         Ok(opts.name.clone())
     }

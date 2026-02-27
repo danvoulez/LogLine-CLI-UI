@@ -3,7 +3,8 @@ import { db } from '@/db/index';
 import { ensureDbSchema } from '@/db/bootstrap';
 import { appSettings } from '@/db/schema';
 import { eq } from 'drizzle-orm';
-import { resolveWorkspaceId, toScopedKey } from '@/lib/auth/workspace';
+import { toScopedAppKey, toScopedKey } from '@/lib/auth/workspace';
+import { AccessDeniedError, requireAccess } from '@/lib/auth/access';
 
 type Params = { params: Promise<{ path: string[] }> };
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -23,12 +24,19 @@ function parseAllowedHosts(): Set<string> {
 }
 
 async function readWorkspaceGatewayUrl(req: NextRequest): Promise<string | null> {
-  const workspaceId = resolveWorkspaceId(req);
-  const key = toScopedKey(workspaceId, 'component_defaults');
-  const rows = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
-  if (rows.length !== 1) return null;
+  const access = await requireAccess(req, 'private_read');
+  const workspaceId = access.workspaceId;
+  const appId = access.appId;
+  const scoped = toScopedAppKey(workspaceId, appId, 'component_defaults');
+  const legacy = toScopedKey(workspaceId, 'component_defaults');
+  const rows = await db.select().from(appSettings).where(eq(appSettings.key, scoped)).limit(1);
+  const legacyRows = rows.length === 0
+    ? await db.select().from(appSettings).where(eq(appSettings.key, legacy)).limit(1)
+    : [];
+  const row = rows[0] ?? legacyRows[0];
+  if (!row) return null;
   try {
-    const parsed = JSON.parse(rows[0].value) as Record<string, unknown>;
+    const parsed = JSON.parse(row.value) as Record<string, unknown>;
     return typeof parsed.llm_gateway_base_url === 'string' ? parsed.llm_gateway_base_url.trim() : null;
   } catch {
     return null;
@@ -72,6 +80,14 @@ function resolveAuth(req: NextRequest): string | null {
 
 async function proxy(req: NextRequest, { params }: Params, method: Method): Promise<NextResponse> {
   await ensureDbSchema();
+  try {
+    await requireAccess(req, 'private_read');
+  } catch (err) {
+    if (err instanceof AccessDeniedError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+  }
   const baseUrl = await resolveBaseUrl(req);
   if (!baseUrl) {
     return NextResponse.json(

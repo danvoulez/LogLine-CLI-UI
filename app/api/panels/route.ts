@@ -3,11 +3,11 @@ import { db } from '@/db/index';
 import { ensureDbSchema } from '@/db/bootstrap';
 import { panels, panelComponents } from '@/db/schema';
 import { seedDefaultData } from '@/db/seed';
-import { asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { MOCK_COMPONENTS } from '@/mocks/ublx-mocks';
 import { normalizeRectToPresets, resolveAllowedPresetIds } from '@/lib/layout/grid-presets';
 import { z } from 'zod';
-import { resolveWorkspaceId } from '@/lib/auth/workspace';
+import { AccessDeniedError, requireAccess } from '@/lib/auth/access';
 
 const createPanelSchema = z.object({
   name: z.string().trim().min(1).max(64).optional(),
@@ -19,18 +19,20 @@ const createPanelSchema = z.object({
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     await ensureDbSchema();
-    const workspaceId = resolveWorkspaceId(req);
+    const access = await requireAccess(req, 'read');
+    const workspaceId = access.workspaceId;
+    const appId = access.appId;
     const existing = await db
       .select({ panel_id: panels.panel_id })
       .from(panels)
-      .where(eq(panels.workspace_id, workspaceId))
+      .where(and(eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)))
       .limit(1);
-    if (existing.length === 0) await seedDefaultData(workspaceId);
+    if (existing.length === 0) await seedDefaultData(workspaceId, appId);
 
     const allPanels = await db
       .select()
       .from(panels)
-      .where(eq(panels.workspace_id, workspaceId))
+      .where(and(eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)))
       .orderBy(asc(panels.position))
       ;
 
@@ -79,6 +81,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json(result);
   } catch (err) {
+    if (err instanceof AccessDeniedError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error('[GET /api/panels]', err);
     return NextResponse.json({ error: 'Failed to fetch panels' }, { status: 500 });
   }
@@ -89,16 +94,22 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     await ensureDbSchema();
-    const workspaceId = resolveWorkspaceId(req);
+    const access = await requireAccess(req, 'write');
+    const workspaceId = access.workspaceId;
+    const appId = access.appId;
     const body = createPanelSchema.parse(await req.json());
     const name = body.name ?? 'New Tab';
 
-    const allPanels = await db.select().from(panels).where(eq(panels.workspace_id, workspaceId));
+    const allPanels = await db
+      .select()
+      .from(panels)
+      .where(and(eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)));
     const maxPosition = allPanels.reduce((max, p) => Math.max(max, p.position), -1);
 
     const newPanel = {
       panel_id:   crypto.randomUUID(),
       workspace_id: workspaceId,
+      app_id: appId,
       name,
       position:   maxPosition + 1,
       version:    '1.0.0',
@@ -112,6 +123,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: 'Invalid panel payload' }, { status: 400 });
+    }
+    if (err instanceof AccessDeniedError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
     }
     console.error('[POST /api/panels]', err);
     return NextResponse.json({ error: 'Failed to create panel' }, { status: 500 });

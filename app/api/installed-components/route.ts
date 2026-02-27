@@ -1,50 +1,64 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db/index';
-import { ensureDbSchema } from '@/db/bootstrap';
-import { installedComponents } from '@/db/schema';
-import { like } from 'drizzle-orm';
-import { resolveWorkspaceId } from '@/lib/auth/workspace';
+import { callLogline } from '@/lib/api/logline-client';
 
 // GET /api/installed-components
+// Rust-owned endpoint: proxy request to logline-daemon /v1/installed-components.
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  const search = req.nextUrl.search || '';
   try {
-    await ensureDbSchema();
-    const workspaceId = resolveWorkspaceId(req);
-    const prefix = `${workspaceId}::`;
-    const rows = await db
-      .select()
-      .from(installedComponents)
-      .where(like(installedComponents.component_id, `${prefix}%`));
+    const upstream = await callLogline(req, `/v1/installed-components${search}`, 'GET');
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const text = await upstream.text();
 
+    return new NextResponse(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+      },
+    });
+  } catch (error) {
     return NextResponse.json(
-      rows.map((row) => ({
-        ...row,
-        component_id: row.component_id.slice(prefix.length),
-      }))
+      {
+        error: 'Failed to reach logline daemon',
+        detail: error instanceof Error ? error.message : 'unknown error',
+      },
+      { status: 502 }
     );
-  } catch (err) {
-    console.error('[GET /api/installed-components]', err);
-    return NextResponse.json({ error: 'Failed to fetch installed components' }, { status: 500 });
   }
 }
 
 // POST /api/installed-components
-// Body: { componentId: string }
+// Rust-owned endpoint: proxy request to logline-daemon /v1/installed-components.
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const search = req.nextUrl.search || '';
+
+  let body: unknown;
   try {
-    await ensureDbSchema();
-    const workspaceId = resolveWorkspaceId(req);
-    const body = await req.json() as { componentId: string };
-    const row = {
-      component_id: `${workspaceId}::${body.componentId}`,
-      installed_at: new Date(),
-    };
-    await db.insert(installedComponents)
-      .values(row)
-      .onConflictDoUpdate({ target: installedComponents.component_id, set: row });
-    return NextResponse.json({ component_id: body.componentId, installed_at: row.installed_at }, { status: 201 });
-  } catch (err) {
-    console.error('[POST /api/installed-components]', err);
-    return NextResponse.json({ error: 'Failed to install component' }, { status: 500 });
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
+
+  try {
+    const upstream = await callLogline(req, `/v1/installed-components${search}`, 'POST', body);
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const text = await upstream.text();
+
+    return new NextResponse(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+      },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Failed to reach logline daemon',
+        detail: error instanceof Error ? error.message : 'unknown error',
+      },
+      { status: 502 }
+    );
   }
 }

@@ -36,7 +36,24 @@ Fix:
 2. Confirm `missing_required_tags` is empty.
 3. Verify `x-workspace-id` and settings are aligned.
 
-## 3) `401 Invalid API key` From Agent Chat
+## 3) `/api/settings` Returns `401` or `403`
+
+Likely causes:
+- Running with `AUTH_PROVIDER_MODE=jwt` + `RBAC_STRICT=1` and no Bearer token.
+- User is `member` and route needs `private_read` (`app_admin`).
+
+Checks:
+
+```bash
+curl -i http://localhost:3000/api/settings
+```
+
+Fix:
+1. For local UI work, use `AUTH_PROVIDER_MODE=compat` and `RBAC_STRICT=0`.
+2. For strict mode, send a valid Supabase JWT in `Authorization`.
+3. Confirm app membership role is `app_admin`.
+
+## 4) `401 Invalid API key` From Agent Chat
 
 Likely causes:
 - Stale `LLM_GATEWAY_KEY`.
@@ -55,7 +72,7 @@ Fix:
 3. Ensure PM2 config forces `LLM_GATEWAY_KEY=""`.
 4. Reload `agent-256`.
 
-## 4) `gateway.auth_mode = env-key` But You Expect Onboarded
+## 5) `gateway.auth_mode = env-key` But You Expect Onboarded
 
 Likely causes:
 - PM2 env precedence still providing `LLM_GATEWAY_KEY`.
@@ -64,7 +81,7 @@ Fix:
 1. Set `env: { LLM_GATEWAY_KEY: "" }` in ecosystem config.
 2. `pm2 startOrReload ... --only agent-256`.
 
-## 5) `502 upstream_error` From Gateway/Agent
+## 6) `502 upstream_error` From Gateway/Agent
 
 Likely causes:
 - Provider billing/credits issue.
@@ -81,7 +98,7 @@ Fix:
 2. Ensure local backend (for example Ollama) is reachable and model exists.
 3. Set deterministic mode to known healthy backend.
 
-## 6) Chat Request Hangs/Times Out
+## 7) Chat Request Hangs/Times Out
 
 Likely causes:
 - Gateway retries all unavailable candidates.
@@ -91,7 +108,7 @@ Fix:
 2. Reduce unhealthy candidates in gateway config.
 3. Restart gateway after config changes.
 
-## 7) `/api/llm-gateway/*` Returns `400` Missing/Disallowed Base URL
+## 8) `/api/llm-gateway/*` Returns `400` Missing/Disallowed Base URL
 
 Likely causes:
 - No base URL configured in app settings/env.
@@ -102,7 +119,7 @@ Fix:
 2. Set `LLM_GATEWAY_BASE_URL` server env fallback.
 3. Update `LLM_GATEWAY_ALLOWED_HOSTS` to include intended host.
 
-## 8) Panel/Component Not Found in Workspace
+## 9) Panel/Component Not Found in Workspace
 
 Likely causes:
 - Wrong workspace header/query.
@@ -112,7 +129,7 @@ Fix:
 2. Confirm resources were created in same workspace.
 3. Verify `DEFAULT_WORKSPACE_ID` consistency.
 
-## 9) PM2 Restarted But Behavior Did Not Change
+## 10) PM2 Restarted But Behavior Did Not Change
 
 Likely causes:
 - Updated file not loaded by PM2 command used.
@@ -123,7 +140,7 @@ Fix:
 2. Use `pm2 startOrReload <ecosystem> --only <app>`.
 3. Check process `uptime` and logs.
 
-## 10) Useful One-Liners
+## 11) Useful One-Liners
 
 List API routes:
 

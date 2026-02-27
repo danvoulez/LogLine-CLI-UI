@@ -6,7 +6,7 @@ use logline_api::{
     SecretStore,
 };
 use logline_connectors::{DefaultConnectorFactory, EnvSecretStore};
-use logline_core::{validate_catalog, ConnectionCatalog};
+use logline_core::{ConnectionCatalog, validate_catalog};
 
 struct RuntimeState {
     active_profile: ProfileId,
@@ -51,7 +51,9 @@ impl LoglineRuntime {
             .profiles
             .get(&first_profile)
             .map(|p| p.backend_id.clone())
-            .ok_or_else(|| LoglineError::Validation("active profile missing backend".to_string()))?;
+            .ok_or_else(|| {
+                LoglineError::Validation("active profile missing backend".to_string())
+            })?;
 
         Ok(Self {
             catalog,

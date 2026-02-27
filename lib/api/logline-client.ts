@@ -32,7 +32,23 @@ export async function callLogline(
 
   const headers = new Headers();
   headers.set('accept', 'application/json');
-  if (token) {
+
+  if (req) {
+    const auth = req.headers.get('authorization');
+    if (auth) {
+      headers.set('authorization', auth);
+    }
+
+    const passThroughHeaders = ['x-user-id', 'x-workspace-id', 'x-app-id', 'x-logline-token'];
+    for (const key of passThroughHeaders) {
+      const value = req.headers.get(key);
+      if (value) {
+        headers.set(key, value);
+      }
+    }
+  }
+
+  if (!headers.get('x-logline-token') && token) {
     headers.set('x-logline-token', token);
   }
   if (body !== undefined) {

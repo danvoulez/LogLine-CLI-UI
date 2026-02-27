@@ -10,7 +10,12 @@ Use when:
 
 Required env in Vercel:
 - `DATABASE_URL`
+- `DATABASE_URL_UNPOOLED` (optional but recommended for migration tooling)
 - `DEFAULT_WORKSPACE_ID` (optional, default is `default`)
+- `DEFAULT_APP_ID` (optional, default is `ublx`)
+- `AUTH_PROVIDER_MODE` (`jwt` recommended in production)
+- `RBAC_STRICT` (`1` recommended in production)
+- `SUPABASE_JWT_SECRET` (required in JWT mode)
 - `LLM_GATEWAY_BASE_URL` (optional fallback)
 - `LLM_GATEWAY_ALLOWED_HOSTS`
 - `LOGLINE_DAEMON_URL` (if using `/api/logline/*`)
@@ -61,7 +66,12 @@ High level:
 
 ```env
 DATABASE_URL=...
+DATABASE_URL_UNPOOLED=...
 DEFAULT_WORKSPACE_ID=default
+DEFAULT_APP_ID=ublx
+AUTH_PROVIDER_MODE=jwt
+RBAC_STRICT=1
+SUPABASE_JWT_SECRET=...
 LLM_GATEWAY_BASE_URL=https://api.logline.world
 LLM_GATEWAY_ALLOWED_HOSTS=api.logline.world,localhost,127.0.0.1
 LOGLINE_DAEMON_URL=https://api.logline.world

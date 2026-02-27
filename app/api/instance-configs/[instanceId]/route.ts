@@ -1,100 +1,69 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db/index';
-import { ensureDbSchema } from '@/db/bootstrap';
-import { instanceConfigs, panelComponents, panels } from '@/db/schema';
-import { and, eq } from 'drizzle-orm';
-import { resolveWorkspaceId } from '@/lib/auth/workspace';
+import { callLogline } from '@/lib/api/logline-client';
 
 type Params = { params: Promise<{ instanceId: string }> };
 
 // GET /api/instance-configs/[instanceId]
-export async function GET(_req: NextRequest, { params }: Params): Promise<NextResponse> {
+// Rust-owned endpoint: proxy request to logline-daemon /v1/instance-configs/:instanceId.
+export async function GET(req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const { instanceId } = await params;
+  const search = req.nextUrl.search || '';
+
   try {
-    await ensureDbSchema();
-    const workspaceId = resolveWorkspaceId(_req);
-    const { instanceId } = await params;
-    const ownership = await db
-      .select({ instance_id: panelComponents.instance_id })
-      .from(panelComponents)
-      .innerJoin(panels, eq(panelComponents.panel_id, panels.panel_id))
-      .where(and(eq(panelComponents.instance_id, instanceId), eq(panels.workspace_id, workspaceId)))
-      .limit(1);
-    if (ownership.length === 0) return NextResponse.json(null);
+    const upstream = await callLogline(req, `/v1/instance-configs/${instanceId}${search}`, 'GET');
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const text = await upstream.text();
 
-    const rows = await db
-      .select()
-      .from(instanceConfigs)
-      .where(eq(instanceConfigs.instance_id, instanceId))
-      .limit(1);
-    const row = rows[0];
-
-    if (!row) return NextResponse.json(null);
-
-    return NextResponse.json({
-      ...row,
-      proc_args: JSON.parse(row.proc_args ?? '[]') as string[],
+    return new NextResponse(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+      },
     });
-  } catch (err) {
-    console.error('[GET /api/instance-configs/:id]', err);
-    return NextResponse.json({ error: 'Failed to fetch config' }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Failed to reach logline daemon',
+        detail: error instanceof Error ? error.message : 'unknown error',
+      },
+      { status: 502 }
+    );
   }
 }
 
-// PUT /api/instance-configs/[instanceId] — upsert
+// PUT /api/instance-configs/[instanceId]
+// Rust-owned endpoint: proxy request to logline-daemon /v1/instance-configs/:instanceId.
 export async function PUT(req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const { instanceId } = await params;
+  const search = req.nextUrl.search || '';
+
+  let body: unknown;
   try {
-    await ensureDbSchema();
-    const workspaceId = resolveWorkspaceId(req);
-    const { instanceId } = await params;
-    const ownership = await db
-      .select({ instance_id: panelComponents.instance_id })
-      .from(panelComponents)
-      .innerJoin(panels, eq(panelComponents.panel_id, panels.panel_id))
-      .where(and(eq(panelComponents.instance_id, instanceId), eq(panels.workspace_id, workspaceId)))
-      .limit(1);
-    if (ownership.length === 0) {
-      return NextResponse.json({ error: 'Instance not found in workspace' }, { status: 404 });
-    }
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
 
-    const body = await req.json() as {
-      source_hub?:         string;
-      source_origin?:      string;
-      source_auth_ref?:    string;
-      source_mode?:        string;
-      source_interval_ms?: number;
-      proc_executor?:      string;
-      proc_command?:       string;
-      proc_args?:          string[];
-      proc_timeout_ms?:    number;
-      proc_retries?:       number;
-      proc_backoff?:       string;
-      proc_error_mode?:    string;
-    };
+  try {
+    const upstream = await callLogline(req, `/v1/instance-configs/${instanceId}${search}`, 'PUT', body);
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const text = await upstream.text();
 
-    const row = {
-      instance_id:        instanceId,
-      source_hub:         body.source_hub         ?? null,
-      source_origin:      body.source_origin       ?? null,
-      source_auth_ref:    body.source_auth_ref     ?? null,
-      source_mode:        body.source_mode         ?? null,
-      source_interval_ms: body.source_interval_ms  ?? null,
-      proc_executor:      body.proc_executor       ?? null,
-      proc_command:       body.proc_command        ?? null,
-      proc_args:          JSON.stringify(body.proc_args ?? []),
-      proc_timeout_ms:    body.proc_timeout_ms     ?? null,
-      proc_retries:       body.proc_retries        ?? null,
-      proc_backoff:       body.proc_backoff        ?? null,
-      proc_error_mode:    body.proc_error_mode     ?? null,
-      updated_at:         new Date(),
-    };
-
-    await db.insert(instanceConfigs)
-      .values(row)
-      .onConflictDoUpdate({ target: instanceConfigs.instance_id, set: row });
-
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    console.error('[PUT /api/instance-configs/:id]', err);
-    return NextResponse.json({ error: 'Failed to save config' }, { status: 500 });
+    return new NextResponse(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+      },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Failed to reach logline daemon',
+        detail: error instanceof Error ? error.message : 'unknown error',
+      },
+      { status: 502 }
+    );
   }
 }

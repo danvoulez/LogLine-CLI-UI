@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use logline_api::{
-    BackendCapabilities, BackendConfig, BackendConnector, ConnectorFactory, DomainEvent, EventCursor,
-    ExecutionResult, Intent, LoglineError, RunId, SecretStore,
+    BackendCapabilities, BackendConfig, BackendConnector, ConnectorFactory, DomainEvent,
+    EventCursor, ExecutionResult, Intent, LoglineError, RunId, SecretStore,
 };
 
 pub struct EnvSecretStore;

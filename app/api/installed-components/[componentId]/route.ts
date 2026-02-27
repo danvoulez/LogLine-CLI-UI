@@ -1,24 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db/index';
-import { ensureDbSchema } from '@/db/bootstrap';
-import { installedComponents } from '@/db/schema';
-import { eq } from 'drizzle-orm';
-import { resolveWorkspaceId } from '@/lib/auth/workspace';
+import { callLogline } from '@/lib/api/logline-client';
 
 type Params = { params: Promise<{ componentId: string }> };
 
 // DELETE /api/installed-components/[componentId]
-export async function DELETE(_req: NextRequest, { params }: Params): Promise<NextResponse> {
+// Rust-owned endpoint: proxy request to logline-daemon /v1/installed-components/:componentId.
+export async function DELETE(req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const { componentId } = await params;
+  const search = req.nextUrl.search || '';
+
   try {
-    await ensureDbSchema();
-    const workspaceId = resolveWorkspaceId(_req);
-    const { componentId } = await params;
-    await db
-      .delete(installedComponents)
-      .where(eq(installedComponents.component_id, `${workspaceId}::${componentId}`));
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    console.error('[DELETE /api/installed-components/:id]', err);
-    return NextResponse.json({ error: 'Failed to uninstall component' }, { status: 500 });
+    const upstream = await callLogline(req, `/v1/installed-components/${componentId}${search}`, 'DELETE');
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const text = await upstream.text();
+
+    return new NextResponse(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+      },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Failed to reach logline daemon',
+        detail: error instanceof Error ? error.message : 'unknown error',
+      },
+      { status: 502 }
+    );
   }
 }

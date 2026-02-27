@@ -6,18 +6,18 @@ import {
   resolveAllowedPresetIds,
   resolveDefaultPresetId,
 } from '@/lib/layout/grid-presets';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 const PANEL_ICONS: Record<string, string> = {
   home: 'Home',
   ops: 'Activity',
 };
 
-export async function seedDefaultData(workspaceId = 'default'): Promise<void> {
+export async function seedDefaultData(workspaceId = 'default', appId = process.env.DEFAULT_APP_ID || 'ublx'): Promise<void> {
   const existing = await db
     .select({ panel_id: panels.panel_id })
     .from(panels)
-    .where(eq(panels.workspace_id, workspaceId))
+    .where(and(eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)))
     .limit(1);
   if (existing.length > 0) return;
 
@@ -25,6 +25,7 @@ export async function seedDefaultData(workspaceId = 'default'): Promise<void> {
     const panelRows = MOCK_PANELS.map((p, idx) => ({
       panel_id: `${workspaceId}::${p.panel_id}`,
       workspace_id: workspaceId,
+      app_id: appId,
       name: p.name,
       position: idx,
       version: p.version,
@@ -74,7 +75,7 @@ export async function seedDefaultData(workspaceId = 'default'): Promise<void> {
     }
 
     const installedRows = MOCK_COMPONENTS.map((c) => ({
-      component_id: c.component_id,
+      component_id: `${workspaceId}:${appId}::${c.component_id}`,
       installed_at: new Date(),
     }));
     await tx.insert(installedComponents).values(installedRows);

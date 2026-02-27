@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callLogline, type LoglineMethod } from '@/lib/api/logline-client';
+import { AccessDeniedError, requireAccess } from '@/lib/auth/access';
 
 type Params = { params: Promise<{ path: string[] }> };
 
 async function proxy(req: NextRequest, { params }: Params, method: LoglineMethod): Promise<NextResponse> {
+  try {
+    await requireAccess(req, 'read');
+  } catch (err) {
+    if (err instanceof AccessDeniedError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+  }
+
   const { path } = await params;
   const pathname = `/${path.join('/')}`;
   const search = req.nextUrl.search || '';

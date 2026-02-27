@@ -111,9 +111,8 @@ pub fn load_catalog_from_dir(dir: &Path) -> Result<ConnectionCatalog, LoglineErr
 }
 
 pub fn load_catalog_from_file(path: &Path) -> Result<ConnectionCatalog, LoglineError> {
-    let content = fs::read_to_string(path).map_err(|e| {
-        LoglineError::NotFound(format!("failed to read {}: {e}", path.display()))
-    })?;
+    let content = fs::read_to_string(path)
+        .map_err(|e| LoglineError::NotFound(format!("failed to read {}: {e}", path.display())))?;
     let raw: RawConnections = toml::from_str(&content).map_err(|e| {
         LoglineError::Validation(format!("invalid TOML in {}: {e}", path.display()))
     })?;
@@ -160,9 +159,8 @@ pub fn load_catalog_from_file(path: &Path) -> Result<ConnectionCatalog, LoglineE
 }
 
 pub fn write_default_config_files(dir: &Path) -> Result<(), LoglineError> {
-    fs::create_dir_all(dir).map_err(|e| {
-        LoglineError::Internal(format!("failed to create {}: {e}", dir.display()))
-    })?;
+    fs::create_dir_all(dir)
+        .map_err(|e| LoglineError::Internal(format!("failed to create {}: {e}", dir.display())))?;
 
     let files: [(&str, &str); 3] = [
         (
@@ -182,8 +180,9 @@ pub fn write_default_config_files(dir: &Path) -> Result<(), LoglineError> {
     for (name, body) in files {
         let path = dir.join(name);
         if !path.exists() {
-            fs::write(&path, body)
-                .map_err(|e| LoglineError::Internal(format!("failed to write {}: {e}", path.display())))?;
+            fs::write(&path, body).map_err(|e| {
+                LoglineError::Internal(format!("failed to write {}: {e}", path.display()))
+            })?;
         }
     }
 

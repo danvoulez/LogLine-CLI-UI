@@ -1,0 +1,157 @@
+{
+  "meta": {
+    "doc_id": "LLM_COMPACT_GUIDE",
+    "source": "LLM-FULL-GUIDE.json",
+    "version": "1.1",
+    "date": "2026-02-27",
+    "root_path": "/Users/ubl-ops/UBLX App",
+    "ports": { "ui_nextjs": 3000, "logline_daemon": 7600 },
+    "urls": {
+      "ui": "http://localhost:3000",
+      "api_base": "http://localhost:3000/api",
+      "daemon_base": "http://127.0.0.1:7600"
+    }
+  },
+  "core_model": {
+    "layers": [
+      "UI: Next.js app at localhost:3000",
+      "API: Next.js route handlers under app/api/*",
+      "Engine: Rust logline daemon at 127.0.0.1:7600 (optional for basic UI)"
+    ],
+    "flow": [
+      "UI action -> /api/*",
+      "auth check (compat header or jwt bearer)",
+      "Postgres read/write via DATABASE_URL",
+      "optional daemon call",
+      "JSON response to UI"
+    ],
+    "settings_cascade": "app -> panel -> instance (most specific wins)"
+  },
+  "fast_start": {
+    "prereqs": ["node >=20", "npm", "cargo"],
+    "setup": [
+      "cd \"/Users/ubl-ops/UBLX App\"",
+      "cp .env.example .env.local",
+      "fill DATABASE_URL (+ DATABASE_URL_UNPOOLED)",
+      "set local defaults: AUTH_PROVIDER_MODE=compat, RBAC_STRICT=0",
+      "npm install",
+      "npm run dev"
+    ],
+    "optional_daemon": [
+      "cd \"/Users/ubl-ops/UBLX App/logline\"",
+      "cargo check",
+      "LOGLINE_DAEMON_TOKEN=dev-token cargo run -p logline-daemon -- --host 127.0.0.1 --port 7600"
+    ]
+  },
+  "auth": {
+    "modes": {
+      "compat": {
+        "env": { "AUTH_PROVIDER_MODE": "compat", "RBAC_STRICT": "0" },
+        "identity": "x-user-id header",
+        "use_for": ["local dev", "UI feature work"]
+      },
+      "jwt": {
+        "env": { "AUTH_PROVIDER_MODE": "jwt", "RBAC_STRICT": "1", "SUPABASE_JWT_SECRET": "required" },
+        "identity": "Authorization: Bearer <jwt>",
+        "use_for": ["integration", "production"]
+      }
+    },
+    "error_map": {
+      "401": "Not authenticated (missing header/token)",
+      "403": "Authenticated but not authorized (missing membership/role)"
+    }
+  },
+  "health_checks": {
+    "baseline": [
+      "curl -sS http://localhost:3000/api/panels | jq",
+      "curl -sS -H \"x-user-id: local-dev\" http://localhost:3000/api/settings | jq"
+    ],
+    "effective_config": "curl -sS \"http://localhost:3000/api/effective-config/<instanceId>\" | jq",
+    "strict_jwt_expectation": [
+      "AUTH_PROVIDER_MODE=jwt RBAC_STRICT=1 npm run dev",
+      "curl -i http://localhost:3000/api/settings  # expect 401 without token"
+    ],
+    "quality": [
+      "npm run lint",
+      "npm run build",
+      "cd logline && cargo check --workspace",
+      "cd logline && cargo test --workspace"
+    ]
+  },
+  "top_troubleshooting": [
+    {
+      "symptom": "Blank/dark UI",
+      "likely": "DATABASE_URL missing/wrong/unreachable",
+      "fix": ["check server logs", "curl /api/panels", "fix .env.local", "restart npm run dev"]
+    },
+    {
+      "symptom": "npm not found",
+      "likely": "Node not installed",
+      "fix": ["install Node LTS", "reopen terminal"]
+    },
+    {
+      "symptom": "cargo not found",
+      "likely": "Rust not installed",
+      "fix": ["install rustup", "reopen terminal"]
+    },
+    {
+      "symptom": "401 Unauthorized",
+      "likely": "missing auth header/token",
+      "fix": ["compat: add x-user-id", "jwt: add bearer token", "restart with intended auth env"]
+    },
+    {
+      "symptom": "403 Forbidden",
+      "likely": "missing role/membership",
+      "fix": ["dev: RBAC_STRICT=0", "real auth: ensure app membership + app_admin"]
+    },
+    {
+      "symptom": "Port 3000 in use",
+      "likely": "another process listening",
+      "fix": ["npx kill-port 3000", "or lsof -i :3000 and kill PID"]
+    },
+    {
+      "symptom": "Daemon unreachable on 7600",
+      "likely": "daemon not running/port mismatch",
+      "fix": ["check daemon terminal", "lsof -i :7600", "rerun cargo command with --port 7600"]
+    },
+    {
+      "symptom": "Settings saved but no effect",
+      "likely": "cascade mismatch / missing tags / workspace mismatch",
+      "fix": ["check effective-config", "review missing_required_tags", "verify DEFAULT_WORKSPACE_ID"]
+    }
+  ],
+  "re_expand_hints": {
+    "source_file": "/Users/ubl-ops/UBLX App/LLM-FULL-GUIDE.json",
+    "when_to_pull_more": [
+      "Need complete onboarding or beginner explanations",
+      "Need full troubleshooting catalog beyond top failures",
+      "Need auth migration strategy/details",
+      "Need glossary/learning-path/training context",
+      "Need to resolve doc conflicts or verify assumptions"
+    ],
+    "where_to_pull": {
+      "setup_onboarding": "setup_from_zero, hands_on_30min, daily_workflow",
+      "settings_debug": "settings_cascade",
+      "auth_details": "auth, testing_and_health.strict_jwt_mode_test",
+      "full_validation": "testing_and_health.code_quality, testing_and_health.pass_criteria",
+      "deep_troubleshooting": "troubleshooting.problems",
+      "terminology": "glossary.minimum_30_terms",
+      "learning_sequence": "learning_path",
+      "known_conflicts": "conflicts_and_assumptions"
+    },
+    "fetch_strategy": [
+      "Use compact guide first for execution",
+      "Pull only the minimum relevant full sections",
+      "Prefer section-targeted retrieval over full-file expansion"
+    ]
+  },
+  "operator_defaults": {
+    "remember_5": [
+      "Two programs: Next.js on 3000, daemon on 7600",
+      "Run npm in repo root; run cargo in logline/",
+      "Local dev: compat + RBAC_STRICT=0",
+      "Config cascade: app -> panel -> instance",
+      "Debug order: server logs -> browser console -> curl checks"
+    ]
+  }
+}

@@ -18,6 +18,9 @@ cargo run -p logline-cli -- status
 cargo run -p logline-cli -- --json run --intent sync --arg source=iphone
 LOGLINE_DAEMON_URL=https://api.logline.world LOGLINE_DAEMON_TOKEN=dev-token \
 cargo run -p logline-cli -- auth whoami
+cargo run -p logline-cli -- supabase check --workdir /Users/ubl-ops/UBLX\ App
+cargo run -p logline-cli -- supabase link --project-ref aypxnwofjtdnmtxastti --workdir /Users/ubl-ops/UBLX\ App
+cargo run -p logline-cli -- supabase migrate --workdir /Users/ubl-ops/UBLX\ App
 LOGLINE_DAEMON_TOKEN=dev-token cargo run -p logline-daemon -- --host 127.0.0.1 --port 7600
 LOGLINE_JWKS_URL=https://issuer.example/.well-known/jwks.json \
 LOGLINE_JWT_ISSUER=https://issuer.example/ \
@@ -53,4 +56,13 @@ cargo run -p logline-daemon -- --host 127.0.0.1 --port 7600
   - Admin auth routes remain bootstrap-token only (JWT cannot mint/revoke/list sessions).
   - CLI helper:
     - `logline auth whoami --daemon-url <url> --token <token>`
+    - `logline auth tenant-resolve --daemon-url <app-url> --slug <tenant-slug>`
+    - `logline auth onboard-claim --daemon-url <app-url> --token <jwt> --tenant-slug <slug> [--display-name <name>]`
+    - `logline auth onboard-founder --daemon-url <app-url> --token <jwt> --tenant-slug <slug> [--display-name <name>] [--public-key <hex>]`
     - Or set `LOGLINE_DAEMON_URL` and `LOGLINE_DAEMON_TOKEN`.
+  - Supabase helper:
+    - `logline supabase check --workdir <project-dir>`
+    - `logline supabase projects --workdir <project-dir>`
+    - `logline supabase link --project-ref <ref> --workdir <project-dir>`
+    - `logline supabase migrate --workdir <project-dir>`
+    - `logline supabase raw <any supabase args...>`

@@ -4,7 +4,7 @@ import { ensureDbSchema } from '@/db/bootstrap';
 import { panelSettings, panels } from '@/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { resolveWorkspaceId } from '@/lib/auth/workspace';
+import { AccessDeniedError, requireAccess } from '@/lib/auth/access';
 
 type Params = { params: Promise<{ panelId: string }> };
 
@@ -14,12 +14,14 @@ const panelSettingsSchema = z.record(z.string(), z.unknown());
 export async function GET(_req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
     await ensureDbSchema();
-    const workspaceId = resolveWorkspaceId(_req);
+    const access = await requireAccess(_req, 'read');
+    const workspaceId = access.workspaceId;
+    const appId = access.appId;
     const { panelId } = await params;
     const panel = await db
       .select({ panel_id: panels.panel_id })
       .from(panels)
-      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId)))
+      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)))
       .limit(1);
     if (panel.length === 0) {
       return NextResponse.json({ panel_id: panelId, settings: {} });
@@ -37,6 +39,9 @@ export async function GET(_req: NextRequest, { params }: Params): Promise<NextRe
       settings: row ? JSON.parse(row.settings) as Record<string, unknown> : {},
     });
   } catch (err) {
+    if (err instanceof AccessDeniedError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error('[GET /api/panel-settings/:id]', err);
     return NextResponse.json({ error: 'Failed to fetch panel settings' }, { status: 500 });
   }
@@ -47,12 +52,14 @@ export async function GET(_req: NextRequest, { params }: Params): Promise<NextRe
 export async function PUT(req: NextRequest, { params }: Params): Promise<NextResponse> {
   try {
     await ensureDbSchema();
-    const workspaceId = resolveWorkspaceId(req);
+    const access = await requireAccess(req, 'write');
+    const workspaceId = access.workspaceId;
+    const appId = access.appId;
     const { panelId } = await params;
     const panel = await db
       .select({ panel_id: panels.panel_id })
       .from(panels)
-      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId)))
+      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)))
       .limit(1);
     if (panel.length === 0) {
       return NextResponse.json({ error: 'Panel not found in workspace' }, { status: 404 });
@@ -75,6 +82,9 @@ export async function PUT(req: NextRequest, { params }: Params): Promise<NextRes
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: 'Invalid panel settings payload' }, { status: 400 });
+    }
+    if (err instanceof AccessDeniedError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
     }
     console.error('[PUT /api/panel-settings/:id]', err);
     return NextResponse.json({ error: 'Failed to save panel settings' }, { status: 500 });

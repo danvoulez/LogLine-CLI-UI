@@ -1,39 +1,62 @@
 # UBLX Documentation Index
 
-This folder is the operational and technical source of truth for UBLX + LogLine integrations.
+This folder is the technical source of truth for UBLX + LogLine UI/API/CLI.
 
-## Start Here
+## Read By Goal
 
-- `LLM_START_HERE.md`: Fast guide to run UI, daemon, and core flows.
-- `LAB256_AGENT_GATEWAY_RUNBOOK.md`: Exact PM2/onboarding runbook for this machine setup.
+If you are new and want to run the app:
+- `GETTING_STARTED.md`
+- `TESTING.md`
 
-## Core Product Docs
+If you are implementing features:
+- `ARCHITECTURE.md`
+- `SETTINGS_CASCADE.md`
+- `API_CONTRACTS.md`
+- `RBAC_MODEL.md`
 
-- `GETTING_STARTED.md`: First 10-minute setup, checks, and first successful workflow.
-- `ARCHITECTURE.md`: Boundaries and responsibilities across UI, API, gateway, CLI/daemon.
-- `SETTINGS_CASCADE.md`: App -> tab -> component settings inheritance and binding rules.
-- `API_CONTRACTS.md`: App API endpoint contracts, payloads, and proxy behavior.
-- `OPERATIONS.md`: Day-to-day PM2 runtime operations and health checks.
-- `TROUBLESHOOTING.md`: Symptom -> cause -> fix playbook.
-- `DEPLOYMENT.md`: Deployment topologies (Vercel, local full stack, tunnel/mobile).
-- `SECURITY.md`: Secret handling, auth boundaries, and hardening checklist.
-- `BRAND.md`: Official mark assets and usage rules.
-- `CONTRIBUTING.md`: Workflow, validation, and PR quality bar.
-- `CHANGELOG.md`: Notable platform/doc/runtime changes over time.
-- `ROADMAP.md`: Active work and next priorities.
+If you are operating services:
+- `OPERATIONS.md`
+- `DEPLOYMENT.md`
+- `TROUBLESHOOTING.md`
 
-## Ecosystem/Institutional Context
+If you are working on auth/security:
+- `AUTH_PERMANENT_PLAN.md`
+- `SUPABASE_FOUNDATION.md`
+- `SECURITY.md`
+
+## Core Docs
+
+- `LLM_START_HERE.md`: Fast path to run UI + gateway flows.
+- `GETTING_STARTED.md`: First setup and first successful run.
+- `TESTING.md`: Validation suite for web, auth, CLI, and migrations.
+- `ARCHITECTURE.md`: System boundaries and component responsibilities.
+- `SETTINGS_CASCADE.md`: App -> tab -> component inheritance contract.
+- `API_CONTRACTS.md`: API route contracts including `/api/v1/*`.
+- `RBAC_MODEL.md`: Tenant/app/user role model and permission semantics.
+- `AUTH_PERMANENT_PLAN.md`: Long-term auth rollout and execution plan.
+- `SUPABASE_FOUNDATION.md`: Persistence and Supabase operating model.
+- `SECURITY.md`: Security posture and hardening checklist.
+- `OPERATIONS.md`: PM2 runbook and daily commands.
+- `DEPLOYMENT.md`: Deployment topologies and env matrix.
+- `TROUBLESHOOTING.md`: Symptom -> cause -> fix.
+- `CONTRIBUTING.md`: Workflow and quality bar.
+- `CHANGELOG.md`: Notable changes.
+- `ROADMAP.md`: Upcoming priorities.
+- `BRAND.md`: Logo usage references.
+
+## Ecosystem Context
 
 - `LOGLINE.WORLD — Official Ecosystem Doc.md`: Internal ecosystem map.
-- `UBLX — Beginner's Guide (Detailed Edit.md`: Human-friendly usage guide.
+- `UBLX — Beginner's Guide (Detailed Edit.md`: Friendly operator guide.
+- `LAB256_AGENT_GATEWAY_RUNBOOK.md`: Machine-specific PM2/onboarding runbook.
 
-## Logline CLI Subdocs
+## CLI Subdocs
 
 - `logline-cli/ARCHITECTURE.md`
 - `logline-cli/examples/*`
 
-## Conventions
+## Documentation Rules
 
-- Use absolute paths in operational commands.
-- Prefer environment-driven configuration over hardcoded secrets.
-- Keep docs updated in the same PR/commit as behavior changes.
+- Prefer explicit command examples over abstract description.
+- Keep env var names and endpoint paths exact.
+- Update docs in the same change set as behavior changes.

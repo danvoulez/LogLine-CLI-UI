@@ -161,13 +161,22 @@ impl JwtVerifier {
     /// Verify a token using the configured JWKS URL.
     ///
     /// Requires the `fetch-reqwest` feature.
-    pub async fn verify_with_jwks_url(&self, token: &str, opts: VerifyOptions) -> Result<VerifiedJwt> {
+    pub async fn verify_with_jwks_url(
+        &self,
+        token: &str,
+        opts: VerifyOptions,
+    ) -> Result<VerifiedJwt> {
         self.verify_with_source(token, JwksSource::Url(opts.jwks_url.clone()), opts)
             .await
     }
 
     /// Verify a token using a JWKS source (URL, JSON, or parsed set).
-    pub async fn verify_with_source(&self, token: &str, source: JwksSource, opts: VerifyOptions) -> Result<VerifiedJwt> {
+    pub async fn verify_with_source(
+        &self,
+        token: &str,
+        source: JwksSource,
+        opts: VerifyOptions,
+    ) -> Result<VerifiedJwt> {
         let header = jsonwebtoken::decode_header(token)
             .map_err(|e| Error::InvalidJwt(format!("failed to decode header: {e}")))?;
 
@@ -200,7 +209,13 @@ impl JwtVerifier {
                     let (set, max_age_seconds) = fetch_jwks_url(url).await?;
                     let ttl = std::cmp::min(max_age_seconds, opts.max_jwks_age_seconds);
                     let exp_at_ms = now_ms + (ttl as u128 * 1000);
-                    JWKS_CACHE.insert(url.clone(), CachedJwks { exp_at_ms, jwks: set.clone() });
+                    JWKS_CACHE.insert(
+                        url.clone(),
+                        CachedJwks {
+                            exp_at_ms,
+                            jwks: set.clone(),
+                        },
+                    );
                     return Ok(set);
                 }
 
@@ -220,7 +235,11 @@ impl JwtVerifier {
     /// 2) `verify_with_jwks_url(token, VerifyOptions { jwks_url, issuer: Some(issuer), .. })`
     ///
     /// Requires the `fetch-reqwest` feature.
-    pub async fn resolve_oidc_jwks_url(&self, issuer: &str, max_age_seconds: u64) -> Result<String> {
+    pub async fn resolve_oidc_jwks_url(
+        &self,
+        issuer: &str,
+        max_age_seconds: u64,
+    ) -> Result<String> {
         let issuer = issuer.trim_end_matches('/');
         let discovery = format!("{issuer}/.well-known/openid-configuration");
 
@@ -234,26 +253,36 @@ impl JwtVerifier {
                 }
             }
             let (doc, max_age) = fetch_json_with_cache_control(&discovery).await?;
-            let jwks_uri = doc.get("jwks_uri").and_then(|v| v.as_str()).ok_or_else(|| {
-                Error::Jwks("OIDC discovery missing jwks_uri".to_string())
-            })?;
+            let jwks_uri = doc
+                .get("jwks_uri")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| Error::Jwks("OIDC discovery missing jwks_uri".to_string()))?;
             let ttl = std::cmp::min(max_age, max_age_seconds);
-            DISCOVERY_CACHE.insert(discovery, (now_ms + (ttl as u128 * 1000), jwks_uri.to_string()));
+            DISCOVERY_CACHE.insert(
+                discovery,
+                (now_ms + (ttl as u128 * 1000), jwks_uri.to_string()),
+            );
             return Ok(jwks_uri.to_string());
         }
 
         #[cfg(not(feature = "cache"))]
         {
             let (doc, _max_age) = fetch_json_with_cache_control(&discovery).await?;
-            let jwks_uri = doc.get("jwks_uri").and_then(|v| v.as_str()).ok_or_else(|| {
-                Error::Jwks("OIDC discovery missing jwks_uri".to_string())
-            })?;
+            let jwks_uri = doc
+                .get("jwks_uri")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| Error::Jwks("OIDC discovery missing jwks_uri".to_string()))?;
             Ok(jwks_uri.to_string())
         }
     }
 }
 
-fn verify_against_jwks(token: &str, header: &Header, jwks: &JwksSet, opts: &VerifyOptions) -> Result<VerifiedJwt> {
+fn verify_against_jwks(
+    token: &str,
+    header: &Header,
+    jwks: &JwksSet,
+    opts: &VerifyOptions,
+) -> Result<VerifiedJwt> {
     let mut validation = Validation::new(header.alg);
     validation.leeway = opts.leeway_seconds;
     validation.validate_exp = true;
@@ -280,7 +309,10 @@ fn verify_against_jwks(token: &str, header: &Header, jwks: &JwksSet, opts: &Veri
         if let Ok(key) = decoding_key_from_jwk(jwk) {
             match jsonwebtoken::decode::<Value>(token, &key, &validation) {
                 Ok(data) => {
-                    let verified = VerifiedJwt { header: data.header, claims: data.claims };
+                    let verified = VerifiedJwt {
+                        header: data.header,
+                        claims: data.claims,
+                    };
                     validate_issuer_audience(&verified, opts)?;
                     return Ok(verified);
                 }
@@ -303,13 +335,25 @@ fn verify_against_jwks(token: &str, header: &Header, jwks: &JwksSet, opts: &Veri
 fn decoding_key_from_jwk(jwk: &Jwk) -> Result<DecodingKey> {
     match jwk.kty.as_str() {
         "RSA" => {
-            let n = jwk.n.as_deref().ok_or_else(|| Error::Jwks("RSA JWK missing n".to_string()))?;
-            let e = jwk.e.as_deref().ok_or_else(|| Error::Jwks("RSA JWK missing e".to_string()))?;
+            let n = jwk
+                .n
+                .as_deref()
+                .ok_or_else(|| Error::Jwks("RSA JWK missing n".to_string()))?;
+            let e = jwk
+                .e
+                .as_deref()
+                .ok_or_else(|| Error::Jwks("RSA JWK missing e".to_string()))?;
             Ok(DecodingKey::from_rsa_components(n, e)?)
         }
         "EC" => {
-            let x = jwk.x.as_deref().ok_or_else(|| Error::Jwks("EC JWK missing x".to_string()))?;
-            let y = jwk.y.as_deref().ok_or_else(|| Error::Jwks("EC JWK missing y".to_string()))?;
+            let x = jwk
+                .x
+                .as_deref()
+                .ok_or_else(|| Error::Jwks("EC JWK missing x".to_string()))?;
+            let y = jwk
+                .y
+                .as_deref()
+                .ok_or_else(|| Error::Jwks("EC JWK missing y".to_string()))?;
             Ok(DecodingKey::from_ec_components(x, y)?)
         }
         "OKP" => {
@@ -319,7 +363,10 @@ fn decoding_key_from_jwk(jwk: &Jwk) -> Result<DecodingKey> {
             if crv != "Ed25519" {
                 return Err(Error::Jwks(format!("unsupported OKP curve: {crv}")));
             }
-            let x = jwk.x.as_deref().ok_or_else(|| Error::Jwks("OKP JWK missing x".to_string()))?;
+            let x = jwk
+                .x
+                .as_deref()
+                .ok_or_else(|| Error::Jwks("OKP JWK missing x".to_string()))?;
             let pubkey = base64::engine::general_purpose::URL_SAFE_NO_PAD
                 .decode(x)
                 .map_err(|e| Error::Jwks(format!("invalid okp x: {e}")))?;
@@ -331,21 +378,31 @@ fn decoding_key_from_jwk(jwk: &Jwk) -> Result<DecodingKey> {
 
 fn validate_issuer_audience(verified: &VerifiedJwt, opts: &VerifyOptions) -> Result<()> {
     if let Some(expected_iss) = &opts.issuer {
-        let iss = verified.iss().ok_or_else(|| Error::Validation("missing iss".to_string()))?;
+        let iss = verified
+            .iss()
+            .ok_or_else(|| Error::Validation("missing iss".to_string()))?;
         if iss != expected_iss {
-            return Err(Error::Validation(format!("issuer mismatch: expected {expected_iss}, got {iss}")));
+            return Err(Error::Validation(format!(
+                "issuer mismatch: expected {expected_iss}, got {iss}"
+            )));
         }
     }
 
     if let Some(expected_aud) = &opts.audience {
-        let aud = verified.aud().ok_or_else(|| Error::Validation("missing aud".to_string()))?;
+        let aud = verified
+            .aud()
+            .ok_or_else(|| Error::Validation("missing aud".to_string()))?;
         let ok = match aud {
             Value::String(s) => s == expected_aud,
-            Value::Array(arr) => arr.iter().any(|v| v.as_str() == Some(expected_aud.as_str())),
+            Value::Array(arr) => arr
+                .iter()
+                .any(|v| v.as_str() == Some(expected_aud.as_str())),
             _ => false,
         };
         if !ok {
-            return Err(Error::Validation(format!("audience mismatch: expected {expected_aud}")));
+            return Err(Error::Validation(format!(
+                "audience mismatch: expected {expected_aud}"
+            )));
         }
     }
 
