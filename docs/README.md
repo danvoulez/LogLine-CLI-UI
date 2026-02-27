@@ -15,6 +15,10 @@ This folder is the operational and technical source of truth for UBLX + LogLine 
 - `API_CONTRACTS.md`: App API endpoint contracts, payloads, and proxy behavior.
 - `OPERATIONS.md`: Day-to-day PM2 runtime operations and health checks.
 - `TROUBLESHOOTING.md`: Symptom -> cause -> fix playbook.
+- `DEPLOYMENT.md`: Deployment topologies (Vercel, local full stack, tunnel/mobile).
+- `SECURITY.md`: Secret handling, auth boundaries, and hardening checklist.
+- `CONTRIBUTING.md`: Workflow, validation, and PR quality bar.
+- `CHANGELOG.md`: Notable platform/doc/runtime changes over time.
 - `ROADMAP.md`: Active work and next priorities.
 
 ## Ecosystem/Institutional Context
