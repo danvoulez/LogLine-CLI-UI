@@ -94,6 +94,9 @@ Agent side (LAB256-Agent):
 - Issued key is cached locally and used to call `/v1/chat/completions`.
 - If onboarding fails, cached key is used as fallback.
 
+Runbook for real machine operations:
+- `docs/LAB256_AGENT_GATEWAY_RUNBOOK.md`
+
 ## 6) How to Add New Logic
 
 ### A) Add a new visual component (UI component)

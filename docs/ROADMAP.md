@@ -8,6 +8,7 @@
 - Chat persistence is now workspace-scoped.
 - `/api/llm-gateway/*` now validates gateway host allowlist (`LLM_GATEWAY_ALLOWED_HOSTS`) and supports app-setting fallback URL.
 - Frontend API hooks emit `x-workspace-id` on requests (default `default`, overridable via `localStorage.ublx_workspace_id`).
+- LAB256-Agent onboarding flow is wired (`CLI_JWT` -> `/v1/onboarding/sync` -> issued app key cache).
 
 ## Next
 
@@ -17,3 +18,6 @@
   - Apps do not self-price their own clients.
 - Auth-to-workspace mapping (replace header/manual workspace selection with signed identity).
 - UI workspace switcher (header emission already implemented in hooks).
+- Gateway provider reliability policy:
+  - guarantee at least one healthy backend per mode (local/premium),
+  - avoid long retry/hang behavior when upstreams are unavailable.
