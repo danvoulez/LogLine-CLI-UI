@@ -12,8 +12,9 @@ View your app in AI Studio: https://ai.studio/apps/648c12d6-aa3d-46a9-8f23-67834
 
 **Prerequisites:**  Node.js
 
-Start here for a simple project guide:
-- `docs/START_HERE.md`
+Start here:
+- `docs/README.md` (docs index)
+- `docs/LLM_START_HERE.md` (quick path)
 
 
 1. Install dependencies:

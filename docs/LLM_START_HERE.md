@@ -2,6 +2,12 @@
 
 This is the fastest way to understand what you can do, from terminal to UI to new logic.
 
+Related docs:
+- `docs/README.md`
+- `docs/GETTING_STARTED.md`
+- `docs/ARCHITECTURE.md`
+- `docs/SETTINGS_CASCADE.md`
+
 ## 1) Open Terminal and Enter the Project
 
 ```bash
