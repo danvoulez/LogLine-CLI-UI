@@ -21,3 +21,18 @@
 - Gateway provider reliability policy:
   - guarantee at least one healthy backend per mode (local/premium),
   - avoid long retry/hang behavior when upstreams are unavailable.
+
+## Green Track (Architecture Execution)
+
+- Foundational docs published:
+  - `LOGLINE_OPERATING_POSTURE.md`
+  - `LOGLINE_ECOSYSTEM_NORMATIVE_BASE.md`
+  - `ECOSYSTEM_GREEN_TASKLIST.md`
+- Immediate order of execution:
+  1. HQ boundary freeze
+  2. Canonical identity scope freeze
+  3. Tier A/B/C risk posture freeze
+  4. Shared middleware chain for Tier A endpoints
+  5. Policy decision contract
+  6. Usage ledger canon
+  7. Central pricing derivation engine

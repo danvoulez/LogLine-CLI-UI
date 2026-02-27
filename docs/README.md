@@ -27,6 +27,11 @@ If you are working on auth/security:
 ## Core Docs
 
 - `LLM_START_HERE.md`: Fast path to run UI + gateway flows.
+- `LOGLINE_OPERATING_POSTURE.md`: Operational-first safety posture (strict where it matters, lightweight elsewhere).
+- `LOGLINE_ECOSYSTEM_NORMATIVE_BASE.md`: Non-negotiable invariants and architecture boundaries.
+- `ECOSYSTEM_GREEN_TASKLIST.md`: Dependency-mapped execution checklist with decision ownership.
+- `ECOSYSTEM_PHASE0_DECISION_FORM.md`: One-page founder approval form for root architecture decisions.
+- `ECOSYSTEM_PHASE0_APPROVED_V1.md`: Approved Phase 0 baseline for execution.
 - `GETTING_STARTED.md`: First setup and first successful run.
 - `TESTING.md`: Validation suite for web, auth, CLI, and migrations.
 - `ARCHITECTURE.md`: System boundaries and component responsibilities.
