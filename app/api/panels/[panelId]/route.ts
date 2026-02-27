@@ -1,60 +1,69 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db/index';
-import { ensureDbSchema } from '@/db/bootstrap';
-import { panels } from '@/db/schema';
-import { and, eq } from 'drizzle-orm';
-import { AccessDeniedError, requireAccess } from '@/lib/auth/access';
+import { callLogline } from '@/lib/api/logline-client';
 
 type Params = { params: Promise<{ panelId: string }> };
 
 // PATCH /api/panels/[panelId]
-// Body: { name?: string; position?: number }
+// Rust-owned endpoint: proxy request to logline-daemon /v1/panels/:panelId.
 export async function PATCH(req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const { panelId } = await params;
+  const search = req.nextUrl.search || '';
+
+  let body: unknown;
   try {
-    await ensureDbSchema();
-    const access = await requireAccess(req, 'write');
-    const workspaceId = access.workspaceId;
-    const appId = access.appId;
-    const { panelId } = await params;
-    const body = await req.json() as { name?: string; position?: number };
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
 
-    const updates: Record<string, unknown> = { updated_at: new Date() };
-    if (body.name     !== undefined) updates.name     = body.name.trim();
-    if (body.position !== undefined) updates.position = body.position;
+  try {
+    const upstream = await callLogline(req, `/v1/panels/${panelId}${search}`, 'PATCH', body);
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const text = await upstream.text();
 
-    await db
-      .update(panels)
-      .set(updates)
-      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)));
-
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    if (err instanceof AccessDeniedError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    console.error('[PATCH /api/panels/:id]', err);
-    return NextResponse.json({ error: 'Failed to update panel' }, { status: 500 });
+    return new NextResponse(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+      },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Failed to reach logline daemon',
+        detail: error instanceof Error ? error.message : 'unknown error',
+      },
+      { status: 502 }
+    );
   }
 }
 
 // DELETE /api/panels/[panelId]
-// CASCADE removes panel_components and tab_meta automatically
-export async function DELETE(_req: NextRequest, { params }: Params): Promise<NextResponse> {
+// Rust-owned endpoint: proxy request to logline-daemon /v1/panels/:panelId.
+export async function DELETE(req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const { panelId } = await params;
+  const search = req.nextUrl.search || '';
+
   try {
-    await ensureDbSchema();
-    const access = await requireAccess(_req, 'write');
-    const workspaceId = access.workspaceId;
-    const appId = access.appId;
-    const { panelId } = await params;
-    await db
-      .delete(panels)
-      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)));
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    if (err instanceof AccessDeniedError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    console.error('[DELETE /api/panels/:id]', err);
-    return NextResponse.json({ error: 'Failed to delete panel' }, { status: 500 });
+    const upstream = await callLogline(req, `/v1/panels/${panelId}${search}`, 'DELETE');
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const text = await upstream.text();
+
+    return new NextResponse(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+      },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Failed to reach logline daemon',
+        detail: error instanceof Error ? error.message : 'unknown error',
+      },
+      { status: 502 }
+    );
   }
 }

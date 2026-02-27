@@ -1,92 +1,69 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db/index';
-import { ensureDbSchema } from '@/db/bootstrap';
-import { panelSettings, panels } from '@/db/schema';
-import { and, eq } from 'drizzle-orm';
-import { z } from 'zod';
-import { AccessDeniedError, requireAccess } from '@/lib/auth/access';
+import { callLogline } from '@/lib/api/logline-client';
 
 type Params = { params: Promise<{ panelId: string }> };
 
-const panelSettingsSchema = z.record(z.string(), z.unknown());
-
 // GET /api/panel-settings/[panelId]
-export async function GET(_req: NextRequest, { params }: Params): Promise<NextResponse> {
+// Rust-owned endpoint: proxy request to logline-daemon /v1/panel-settings/:panelId.
+export async function GET(req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const { panelId } = await params;
+  const search = req.nextUrl.search || '';
+
   try {
-    await ensureDbSchema();
-    const access = await requireAccess(_req, 'read');
-    const workspaceId = access.workspaceId;
-    const appId = access.appId;
-    const { panelId } = await params;
-    const panel = await db
-      .select({ panel_id: panels.panel_id })
-      .from(panels)
-      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)))
-      .limit(1);
-    if (panel.length === 0) {
-      return NextResponse.json({ panel_id: panelId, settings: {} });
-    }
+    const upstream = await callLogline(req, `/v1/panel-settings/${panelId}${search}`, 'GET');
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const text = await upstream.text();
 
-    const rows = await db
-      .select()
-      .from(panelSettings)
-      .where(eq(panelSettings.panel_id, panelId))
-      .limit(1);
-    const row = rows[0];
-
-    return NextResponse.json({
-      panel_id: panelId,
-      settings: row ? JSON.parse(row.settings) as Record<string, unknown> : {},
+    return new NextResponse(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+      },
     });
-  } catch (err) {
-    if (err instanceof AccessDeniedError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    console.error('[GET /api/panel-settings/:id]', err);
-    return NextResponse.json({ error: 'Failed to fetch panel settings' }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Failed to reach logline daemon',
+        detail: error instanceof Error ? error.message : 'unknown error',
+      },
+      { status: 502 }
+    );
   }
 }
 
 // PUT /api/panel-settings/[panelId]
-// Body: Record<string, unknown>
+// Rust-owned endpoint: proxy request to logline-daemon /v1/panel-settings/:panelId.
 export async function PUT(req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const { panelId } = await params;
+  const search = req.nextUrl.search || '';
+
+  let body: unknown;
   try {
-    await ensureDbSchema();
-    const access = await requireAccess(req, 'write');
-    const workspaceId = access.workspaceId;
-    const appId = access.appId;
-    const { panelId } = await params;
-    const panel = await db
-      .select({ panel_id: panels.panel_id })
-      .from(panels)
-      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)))
-      .limit(1);
-    if (panel.length === 0) {
-      return NextResponse.json({ error: 'Panel not found in workspace' }, { status: 404 });
-    }
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
 
-    const body = await req.json() as unknown;
-    const parsed = panelSettingsSchema.parse(body);
+  try {
+    const upstream = await callLogline(req, `/v1/panel-settings/${panelId}${search}`, 'PUT', body);
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const text = await upstream.text();
 
-    const row = {
-      panel_id: panelId,
-      settings: JSON.stringify(parsed),
-      updated_at: new Date(),
-    };
-
-    await db.insert(panelSettings)
-      .values(row)
-      .onConflictDoUpdate({ target: panelSettings.panel_id, set: row });
-
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      return NextResponse.json({ error: 'Invalid panel settings payload' }, { status: 400 });
-    }
-    if (err instanceof AccessDeniedError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    console.error('[PUT /api/panel-settings/:id]', err);
-    return NextResponse.json({ error: 'Failed to save panel settings' }, { status: 500 });
+    return new NextResponse(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+      },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Failed to reach logline daemon',
+        detail: error instanceof Error ? error.message : 'unknown error',
+      },
+      { status: 502 }
+    );
   }
 }

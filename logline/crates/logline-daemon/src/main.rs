@@ -181,6 +181,58 @@ struct AppKeyPath {
 }
 
 #[derive(Debug, Deserialize)]
+struct PanelPath {
+    #[serde(rename = "panelId")]
+    panel_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct PanelComponentPath {
+    #[serde(rename = "panelId")]
+    panel_id: String,
+    #[serde(rename = "instanceId")]
+    instance_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreatePanelBody {
+    name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdatePanelBody {
+    name: Option<String>,
+    position: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AddPanelComponentBody {
+    #[serde(rename = "componentId")]
+    component_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RectBody {
+    x: i64,
+    y: i64,
+    w: i64,
+    h: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct PatchPanelComponentBody {
+    rect: Option<RectBody>,
+    front_props: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PutTabMetaBody {
+    icon: Option<String>,
+    label: Option<String>,
+    shortcut: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
 struct AddUserKeyRequest {
     provider: String,
     key_label: String,
@@ -393,6 +445,24 @@ async fn main() -> anyhow::Result<()> {
         .route("/v1/founder/actions/execute", post(founder_actions_execute))
         .route("/v1/apps/{appId}/keys/user", get(list_user_keys))
         .route("/v1/apps/{appId}/keys/user", post(add_user_key))
+        .route("/v1/panels", get(list_panels))
+        .route("/v1/panels", post(create_panel))
+        .route("/v1/panels/{panelId}", patch(update_panel))
+        .route("/v1/panels/{panelId}", delete(delete_panel))
+        .route("/v1/panels/{panelId}/components", get(list_panel_components))
+        .route("/v1/panels/{panelId}/components", post(add_panel_component))
+        .route(
+            "/v1/panels/{panelId}/components/{instanceId}",
+            patch(update_panel_component),
+        )
+        .route(
+            "/v1/panels/{panelId}/components/{instanceId}",
+            delete(delete_panel_component),
+        )
+        .route("/v1/panel-settings/{panelId}", get(get_panel_settings))
+        .route("/v1/panel-settings/{panelId}", put(put_panel_settings))
+        .route("/v1/tab-meta/{panelId}", get(get_tab_meta))
+        .route("/v1/tab-meta/{panelId}", put(put_tab_meta))
         .route("/v1/chat", get(get_chat_messages))
         .route("/v1/chat", post(post_chat_message))
         .route("/v1/settings", get(get_settings))
@@ -2043,6 +2113,604 @@ async fn add_user_key(
         StatusCode::CREATED,
         Json(serde_json::json!({ "key_id": key_id, "ok": true })),
     ))
+}
+
+async fn list_panels(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Query(scope): Query<ScopeQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let Some(db) = state.db.as_ref() else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "database is not configured" })),
+        ));
+    };
+
+    let access =
+        resolve_access_context(&state, &headers, Some(&scope), AccessPermission::Read, None).await?;
+
+    let panel_rows = db
+        .query(
+            "select panel_id, name, position, version \
+             from panels \
+             where workspace_id = $1 and app_id = $2 \
+             order by position asc",
+            &[&access.workspace_id, &access.app_id],
+        )
+        .await
+        .map_err(db_query_error)?;
+
+    let component_rows = db
+        .query(
+            "select pc.instance_id, pc.panel_id, pc.component_id, pc.version, \
+                    pc.rect_x, pc.rect_y, pc.rect_w, pc.rect_h, pc.front_props, pc.position \
+             from panel_components pc \
+             inner join panels p on p.panel_id = pc.panel_id \
+             where p.workspace_id = $1 and p.app_id = $2 \
+             order by p.position asc, pc.position asc",
+            &[&access.workspace_id, &access.app_id],
+        )
+        .await
+        .map_err(db_query_error)?;
+
+    let mut components_by_panel: HashMap<String, Vec<Value>> = HashMap::new();
+    for row in component_rows {
+        let panel_id: String = row.get("panel_id");
+        let front_props_text: String = row.get("front_props");
+        let front_props = serde_json::from_str::<Value>(&front_props_text)
+            .unwrap_or_else(|_| Value::Object(serde_json::Map::new()));
+
+        components_by_panel
+            .entry(panel_id)
+            .or_default()
+            .push(serde_json::json!({
+                "instance_id": row.get::<_, String>("instance_id"),
+                "component_id": row.get::<_, String>("component_id"),
+                "version": row.get::<_, String>("version"),
+                "rect": {
+                    "x": row.get::<_, i32>("rect_x"),
+                    "y": row.get::<_, i32>("rect_y"),
+                    "w": row.get::<_, i32>("rect_w"),
+                    "h": row.get::<_, i32>("rect_h"),
+                },
+                "front_props": front_props,
+            }));
+    }
+
+    let items: Vec<Value> = panel_rows
+        .into_iter()
+        .map(|row| {
+            let panel_id: String = row.get("panel_id");
+            serde_json::json!({
+                "panel_id": panel_id,
+                "name": row.get::<_, String>("name"),
+                "position": row.get::<_, i32>("position"),
+                "version": row.get::<_, String>("version"),
+                "layout_grid": { "rows": 24, "cols": 32 },
+                "components": components_by_panel.remove(&panel_id).unwrap_or_default(),
+            })
+        })
+        .collect();
+
+    Ok(Json(Value::Array(items)))
+}
+
+async fn create_panel(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Query(scope): Query<ScopeQuery>,
+    Json(body): Json<CreatePanelBody>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
+    let Some(db) = state.db.as_ref() else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "database is not configured" })),
+        ));
+    };
+    let access =
+        resolve_access_context(&state, &headers, Some(&scope), AccessPermission::Write, None).await?;
+    let name = body
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .unwrap_or("New Tab")
+        .to_string();
+
+    let next_position_row = db
+        .query_one(
+            "select coalesce(max(position), -1) + 1 as next_position \
+             from panels where workspace_id = $1 and app_id = $2",
+            &[&access.workspace_id, &access.app_id],
+        )
+        .await
+        .map_err(db_query_error)?;
+    let next_position: i32 = next_position_row.get("next_position");
+
+    let panel_id = format!("panel_{}", hex::encode(rand::random::<[u8; 8]>()));
+    db.execute(
+        "insert into panels (panel_id, workspace_id, app_id, name, position, version, created_at, updated_at) \
+         values ($1, $2, $3, $4, $5, '1.0.0', now(), now())",
+        &[&panel_id, &access.workspace_id, &access.app_id, &name, &next_position],
+    )
+    .await
+    .map_err(db_query_error)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::json!({
+            "panel_id": panel_id,
+            "workspace_id": access.workspace_id,
+            "app_id": access.app_id,
+            "name": name,
+            "position": next_position,
+            "version": "1.0.0",
+        })),
+    ))
+}
+
+async fn update_panel(
+    State(state): State<AppState>,
+    Path(path): Path<PanelPath>,
+    headers: axum::http::HeaderMap,
+    Query(scope): Query<ScopeQuery>,
+    Json(body): Json<UpdatePanelBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let Some(db) = state.db.as_ref() else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "database is not configured" })),
+        ));
+    };
+    let access =
+        resolve_access_context(&state, &headers, Some(&scope), AccessPermission::Write, None).await?;
+    let new_position = to_i32(body.position)?;
+    let name = body
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(ToString::to_string);
+
+    db.execute(
+        "update panels set \
+            name = coalesce($1, name), \
+            position = coalesce($2, position), \
+            updated_at = now() \
+         where panel_id = $3 and workspace_id = $4 and app_id = $5",
+        &[&name, &new_position, &path.panel_id, &access.workspace_id, &access.app_id],
+    )
+    .await
+    .map_err(db_query_error)?;
+
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+async fn delete_panel(
+    State(state): State<AppState>,
+    Path(path): Path<PanelPath>,
+    headers: axum::http::HeaderMap,
+    Query(scope): Query<ScopeQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let Some(db) = state.db.as_ref() else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "database is not configured" })),
+        ));
+    };
+    let access =
+        resolve_access_context(&state, &headers, Some(&scope), AccessPermission::Write, None).await?;
+    db.execute(
+        "delete from panels where panel_id = $1 and workspace_id = $2 and app_id = $3",
+        &[&path.panel_id, &access.workspace_id, &access.app_id],
+    )
+    .await
+    .map_err(db_query_error)?;
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+async fn list_panel_components(
+    State(state): State<AppState>,
+    Path(path): Path<PanelPath>,
+    headers: axum::http::HeaderMap,
+    Query(scope): Query<ScopeQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let Some(db) = state.db.as_ref() else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "database is not configured" })),
+        ));
+    };
+    let access =
+        resolve_access_context(&state, &headers, Some(&scope), AccessPermission::Read, None).await?;
+    let panel_rows = db
+        .query(
+            "select panel_id from panels where panel_id = $1 and workspace_id = $2 and app_id = $3 limit 1",
+            &[&path.panel_id, &access.workspace_id, &access.app_id],
+        )
+        .await
+        .map_err(db_query_error)?;
+    if panel_rows.is_empty() {
+        return Ok(Json(Value::Array(vec![])));
+    }
+
+    let rows = db
+        .query(
+            "select instance_id, component_id, version, rect_x, rect_y, rect_w, rect_h, front_props \
+             from panel_components where panel_id = $1 order by position asc",
+            &[&path.panel_id],
+        )
+        .await
+        .map_err(db_query_error)?;
+
+    let items: Vec<Value> = rows
+        .iter()
+        .map(|row| {
+            let front_props_text: String = row.get("front_props");
+            let front_props = serde_json::from_str::<Value>(&front_props_text)
+                .unwrap_or_else(|_| Value::Object(serde_json::Map::new()));
+            serde_json::json!({
+                "instance_id": row.get::<_, String>("instance_id"),
+                "component_id": row.get::<_, String>("component_id"),
+                "version": row.get::<_, String>("version"),
+                "rect": {
+                    "x": row.get::<_, i32>("rect_x"),
+                    "y": row.get::<_, i32>("rect_y"),
+                    "w": row.get::<_, i32>("rect_w"),
+                    "h": row.get::<_, i32>("rect_h"),
+                },
+                "front_props": front_props,
+            })
+        })
+        .collect();
+
+    Ok(Json(Value::Array(items)))
+}
+
+async fn add_panel_component(
+    State(state): State<AppState>,
+    Path(path): Path<PanelPath>,
+    headers: axum::http::HeaderMap,
+    Query(scope): Query<ScopeQuery>,
+    Json(body): Json<AddPanelComponentBody>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
+    let Some(db) = state.db.as_ref() else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "database is not configured" })),
+        ));
+    };
+    let access =
+        resolve_access_context(&state, &headers, Some(&scope), AccessPermission::Write, None).await?;
+    let panel_rows = db
+        .query(
+            "select panel_id from panels where panel_id = $1 and workspace_id = $2 and app_id = $3 limit 1",
+            &[&path.panel_id, &access.workspace_id, &access.app_id],
+        )
+        .await
+        .map_err(db_query_error)?;
+    if panel_rows.is_empty() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Panel not found in workspace" })),
+        ));
+    }
+
+    let component_id = body.component_id.trim().to_string();
+    if component_id.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Invalid request body" })),
+        ));
+    }
+
+    let position_row = db
+        .query_one(
+            "select coalesce(max(position), -1) + 1 as next_position from panel_components where panel_id = $1",
+            &[&path.panel_id],
+        )
+        .await
+        .map_err(db_query_error)?;
+    let next_position: i32 = position_row.get("next_position");
+    let instance_id = format!("{}-{}", component_id, hex::encode(rand::random::<[u8; 6]>()));
+    let front_props_text = serde_json::json!({}).to_string();
+    let rect_x: i32 = 0;
+    let rect_y: i32 = 0;
+    let rect_w: i32 = 8;
+    let rect_h: i32 = 8;
+
+    db.execute(
+        "insert into panel_components \
+         (instance_id, panel_id, component_id, version, rect_x, rect_y, rect_w, rect_h, front_props, position, created_at, updated_at) \
+         values ($1, $2, $3, '1.0.0', $4, $5, $6, $7, $8, $9, now(), now())",
+        &[&instance_id, &path.panel_id, &component_id, &rect_x, &rect_y, &rect_w, &rect_h, &front_props_text, &next_position],
+    )
+    .await
+    .map_err(db_query_error)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::json!({
+            "instance_id": instance_id,
+            "component_id": component_id,
+            "version": "1.0.0",
+            "rect": { "x": rect_x, "y": rect_y, "w": rect_w, "h": rect_h },
+            "front_props": {},
+        })),
+    ))
+}
+
+async fn update_panel_component(
+    State(state): State<AppState>,
+    Path(path): Path<PanelComponentPath>,
+    headers: axum::http::HeaderMap,
+    Query(scope): Query<ScopeQuery>,
+    Json(body): Json<PatchPanelComponentBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let Some(db) = state.db.as_ref() else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "database is not configured" })),
+        ));
+    };
+    let access =
+        resolve_access_context(&state, &headers, Some(&scope), AccessPermission::Write, None).await?;
+    let panel_rows = db
+        .query(
+            "select panel_id from panels where panel_id = $1 and workspace_id = $2 and app_id = $3 limit 1",
+            &[&path.panel_id, &access.workspace_id, &access.app_id],
+        )
+        .await
+        .map_err(db_query_error)?;
+    if panel_rows.is_empty() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Panel not found in workspace" })),
+        ));
+    }
+
+    let mut rect_x: Option<i32> = None;
+    let mut rect_y: Option<i32> = None;
+    let mut rect_w: Option<i32> = None;
+    let mut rect_h: Option<i32> = None;
+    if let Some(rect) = body.rect {
+        if rect.x < 0 || rect.y < 0 || rect.w < 1 || rect.h < 1 {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": "Invalid rect payload" })),
+            ));
+        }
+        rect_x = to_i32(Some(rect.x))?;
+        rect_y = to_i32(Some(rect.y))?;
+        rect_w = to_i32(Some(rect.w))?;
+        rect_h = to_i32(Some(rect.h))?;
+    }
+    let front_props_text = body.front_props.map(|v| v.to_string());
+
+    db.execute(
+        "update panel_components set \
+            rect_x = coalesce($1, rect_x), \
+            rect_y = coalesce($2, rect_y), \
+            rect_w = coalesce($3, rect_w), \
+            rect_h = coalesce($4, rect_h), \
+            front_props = coalesce($5, front_props), \
+            updated_at = now() \
+         where instance_id = $6 and panel_id = $7",
+        &[&rect_x, &rect_y, &rect_w, &rect_h, &front_props_text, &path.instance_id, &path.panel_id],
+    )
+    .await
+    .map_err(db_query_error)?;
+
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+async fn delete_panel_component(
+    State(state): State<AppState>,
+    Path(path): Path<PanelComponentPath>,
+    headers: axum::http::HeaderMap,
+    Query(scope): Query<ScopeQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let Some(db) = state.db.as_ref() else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "database is not configured" })),
+        ));
+    };
+    let access =
+        resolve_access_context(&state, &headers, Some(&scope), AccessPermission::Write, None).await?;
+    let panel_rows = db
+        .query(
+            "select panel_id from panels where panel_id = $1 and workspace_id = $2 and app_id = $3 limit 1",
+            &[&path.panel_id, &access.workspace_id, &access.app_id],
+        )
+        .await
+        .map_err(db_query_error)?;
+    if panel_rows.is_empty() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Panel not found in workspace" })),
+        ));
+    }
+
+    db.execute(
+        "delete from panel_components where instance_id = $1 and panel_id = $2",
+        &[&path.instance_id, &path.panel_id],
+    )
+    .await
+    .map_err(db_query_error)?;
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+async fn get_panel_settings(
+    State(state): State<AppState>,
+    Path(path): Path<PanelPath>,
+    headers: axum::http::HeaderMap,
+    Query(scope): Query<ScopeQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let Some(db) = state.db.as_ref() else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "database is not configured" })),
+        ));
+    };
+    let access =
+        resolve_access_context(&state, &headers, Some(&scope), AccessPermission::Read, None).await?;
+    let panel_rows = db
+        .query(
+            "select panel_id from panels where panel_id = $1 and workspace_id = $2 and app_id = $3 limit 1",
+            &[&path.panel_id, &access.workspace_id, &access.app_id],
+        )
+        .await
+        .map_err(db_query_error)?;
+    if panel_rows.is_empty() {
+        return Ok(Json(serde_json::json!({ "panel_id": path.panel_id, "settings": {} })));
+    }
+
+    let rows = db
+        .query(
+            "select settings from panel_settings where panel_id = $1 limit 1",
+            &[&path.panel_id],
+        )
+        .await
+        .map_err(db_query_error)?;
+    if rows.is_empty() {
+        return Ok(Json(serde_json::json!({ "panel_id": path.panel_id, "settings": {} })));
+    }
+    let settings_text: String = rows[0].get("settings");
+    let settings = serde_json::from_str::<Value>(&settings_text)
+        .unwrap_or_else(|_| Value::Object(serde_json::Map::new()));
+    Ok(Json(serde_json::json!({ "panel_id": path.panel_id, "settings": settings })))
+}
+
+async fn put_panel_settings(
+    State(state): State<AppState>,
+    Path(path): Path<PanelPath>,
+    headers: axum::http::HeaderMap,
+    Query(scope): Query<ScopeQuery>,
+    Json(body): Json<Value>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let Some(db) = state.db.as_ref() else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "database is not configured" })),
+        ));
+    };
+    let access =
+        resolve_access_context(&state, &headers, Some(&scope), AccessPermission::Write, None).await?;
+    let panel_rows = db
+        .query(
+            "select panel_id from panels where panel_id = $1 and workspace_id = $2 and app_id = $3 limit 1",
+            &[&path.panel_id, &access.workspace_id, &access.app_id],
+        )
+        .await
+        .map_err(db_query_error)?;
+    if panel_rows.is_empty() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Panel not found in workspace" })),
+        ));
+    }
+    if !body.is_object() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "Invalid panel settings payload" })),
+        ));
+    }
+    let settings_text = body.to_string();
+    db.execute(
+        "insert into panel_settings (panel_id, settings, updated_at) values ($1, $2, now()) \
+         on conflict (panel_id) do update set settings = excluded.settings, updated_at = now()",
+        &[&path.panel_id, &settings_text],
+    )
+    .await
+    .map_err(db_query_error)?;
+
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+async fn get_tab_meta(
+    State(state): State<AppState>,
+    Path(path): Path<PanelPath>,
+    headers: axum::http::HeaderMap,
+    Query(scope): Query<ScopeQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let Some(db) = state.db.as_ref() else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "database is not configured" })),
+        ));
+    };
+    let access =
+        resolve_access_context(&state, &headers, Some(&scope), AccessPermission::Read, None).await?;
+    let panel_rows = db
+        .query(
+            "select panel_id from panels where panel_id = $1 and workspace_id = $2 and app_id = $3 limit 1",
+            &[&path.panel_id, &access.workspace_id, &access.app_id],
+        )
+        .await
+        .map_err(db_query_error)?;
+    if panel_rows.is_empty() {
+        return Ok(Json(Value::Null));
+    }
+
+    let rows = db
+        .query(
+            "select panel_id, icon, label, shortcut from tab_meta where panel_id = $1 limit 1",
+            &[&path.panel_id],
+        )
+        .await
+        .map_err(db_query_error)?;
+    if rows.is_empty() {
+        return Ok(Json(Value::Null));
+    }
+    let row = &rows[0];
+    Ok(Json(serde_json::json!({
+        "panel_id": row.get::<_, String>("panel_id"),
+        "icon": row.get::<_, Option<String>>("icon"),
+        "label": row.get::<_, Option<String>>("label"),
+        "shortcut": row.get::<_, Option<i32>>("shortcut"),
+    })))
+}
+
+async fn put_tab_meta(
+    State(state): State<AppState>,
+    Path(path): Path<PanelPath>,
+    headers: axum::http::HeaderMap,
+    Query(scope): Query<ScopeQuery>,
+    Json(body): Json<PutTabMetaBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let Some(db) = state.db.as_ref() else {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "database is not configured" })),
+        ));
+    };
+    let access =
+        resolve_access_context(&state, &headers, Some(&scope), AccessPermission::Write, None).await?;
+    let panel_rows = db
+        .query(
+            "select panel_id from panels where panel_id = $1 and workspace_id = $2 and app_id = $3 limit 1",
+            &[&path.panel_id, &access.workspace_id, &access.app_id],
+        )
+        .await
+        .map_err(db_query_error)?;
+    if panel_rows.is_empty() {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Panel not found in workspace" })),
+        ));
+    }
+
+    let shortcut = to_i32(body.shortcut)?;
+    db.execute(
+        "insert into tab_meta (panel_id, icon, label, shortcut) values ($1, $2, $3, $4) \
+         on conflict (panel_id) do update set icon = excluded.icon, label = excluded.label, shortcut = excluded.shortcut",
+        &[&path.panel_id, &body.icon, &body.label, &shortcut],
+    )
+    .await
+    .map_err(db_query_error)?;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 fn to_i32(value: Option<i64>) -> Result<Option<i32>, (StatusCode, Json<serde_json::Value>)> {

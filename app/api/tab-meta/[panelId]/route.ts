@@ -1,80 +1,69 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db/index';
-import { ensureDbSchema } from '@/db/bootstrap';
-import { tabMeta, panels } from '@/db/schema';
-import { and, eq } from 'drizzle-orm';
-import { AccessDeniedError, requireAccess } from '@/lib/auth/access';
+import { callLogline } from '@/lib/api/logline-client';
 
 type Params = { params: Promise<{ panelId: string }> };
 
 // GET /api/tab-meta/[panelId]
-export async function GET(_req: NextRequest, { params }: Params): Promise<NextResponse> {
-  try {
-    await ensureDbSchema();
-    const access = await requireAccess(_req, 'read');
-    const workspaceId = access.workspaceId;
-    const appId = access.appId;
-    const { panelId } = await params;
-    const panel = await db
-      .select({ panel_id: panels.panel_id })
-      .from(panels)
-      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)))
-      .limit(1);
-    if (panel.length === 0) return NextResponse.json(null);
+// Rust-owned endpoint: proxy request to logline-daemon /v1/tab-meta/:panelId.
+export async function GET(req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const { panelId } = await params;
+  const search = req.nextUrl.search || '';
 
-    const rows = await db
-      .select()
-      .from(tabMeta)
-      .where(eq(tabMeta.panel_id, panelId))
-      .limit(1);
-    const row = rows[0];
-    return NextResponse.json(row ?? null);
-  } catch (err) {
-    if (err instanceof AccessDeniedError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    console.error('[GET /api/tab-meta/:id]', err);
-    return NextResponse.json({ error: 'Failed to fetch tab meta' }, { status: 500 });
+  try {
+    const upstream = await callLogline(req, `/v1/tab-meta/${panelId}${search}`, 'GET');
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const text = await upstream.text();
+
+    return new NextResponse(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+      },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Failed to reach logline daemon',
+        detail: error instanceof Error ? error.message : 'unknown error',
+      },
+      { status: 502 }
+    );
   }
 }
 
-// PUT /api/tab-meta/[panelId] — upsert
-// Body: { icon?: string; label?: string; shortcut?: number }
+// PUT /api/tab-meta/[panelId]
+// Rust-owned endpoint: proxy request to logline-daemon /v1/tab-meta/:panelId.
 export async function PUT(req: NextRequest, { params }: Params): Promise<NextResponse> {
+  const { panelId } = await params;
+  const search = req.nextUrl.search || '';
+
+  let body: unknown;
   try {
-    await ensureDbSchema();
-    const access = await requireAccess(req, 'write');
-    const workspaceId = access.workspaceId;
-    const appId = access.appId;
-    const { panelId } = await params;
-    const panel = await db
-      .select({ panel_id: panels.panel_id })
-      .from(panels)
-      .where(and(eq(panels.panel_id, panelId), eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)))
-      .limit(1);
-    if (panel.length === 0) {
-      return NextResponse.json({ error: 'Panel not found in workspace' }, { status: 404 });
-    }
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
 
-    const body = await req.json() as { icon?: string; label?: string; shortcut?: number };
+  try {
+    const upstream = await callLogline(req, `/v1/tab-meta/${panelId}${search}`, 'PUT', body);
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const text = await upstream.text();
 
-    const row = {
-      panel_id: panelId,
-      icon:     body.icon     ?? null,
-      label:    body.label    ?? null,
-      shortcut: body.shortcut ?? null,
-    };
-
-    await db.insert(tabMeta)
-      .values(row)
-      .onConflictDoUpdate({ target: tabMeta.panel_id, set: row });
-
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    if (err instanceof AccessDeniedError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    console.error('[PUT /api/tab-meta/:id]', err);
-    return NextResponse.json({ error: 'Failed to save tab meta' }, { status: 500 });
+    return new NextResponse(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+      },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Failed to reach logline daemon',
+        detail: error instanceof Error ? error.message : 'unknown error',
+      },
+      { status: 502 }
+    );
   }
 }

@@ -1,133 +1,65 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db/index';
-import { ensureDbSchema } from '@/db/bootstrap';
-import { panels, panelComponents } from '@/db/schema';
-import { seedDefaultData } from '@/db/seed';
-import { and, asc, eq, inArray } from 'drizzle-orm';
-import { MOCK_COMPONENTS } from '@/mocks/ublx-mocks';
-import { normalizeRectToPresets, resolveAllowedPresetIds } from '@/lib/layout/grid-presets';
-import { z } from 'zod';
-import { AccessDeniedError, requireAccess } from '@/lib/auth/access';
-
-const createPanelSchema = z.object({
-  name: z.string().trim().min(1).max(64).optional(),
-});
+import { callLogline } from '@/lib/api/logline-client';
 
 // GET /api/panels
-// Returns all panels ordered by position, each with their components array.
-// Seeds the database on first call if tables are empty.
+// Rust-owned endpoint: proxy request to logline-daemon /v1/panels.
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  const search = req.nextUrl.search || '';
+
   try {
-    await ensureDbSchema();
-    const access = await requireAccess(req, 'read');
-    const workspaceId = access.workspaceId;
-    const appId = access.appId;
-    const existing = await db
-      .select({ panel_id: panels.panel_id })
-      .from(panels)
-      .where(and(eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)))
-      .limit(1);
-    if (existing.length === 0) await seedDefaultData(workspaceId, appId);
+    const upstream = await callLogline(req, `/v1/panels${search}`, 'GET');
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const text = await upstream.text();
 
-    const allPanels = await db
-      .select()
-      .from(panels)
-      .where(and(eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)))
-      .orderBy(asc(panels.position))
-      ;
-
-    const panelIds = allPanels.map((p) => p.panel_id);
-    const allComponents = await db
-      .select()
-      .from(panelComponents)
-      .where(panelIds.length > 0 ? inArray(panelComponents.panel_id, panelIds) : eq(panelComponents.panel_id, '__none__'))
-      .orderBy(asc(panelComponents.position))
-      ;
-
-    // Group components by panel_id in JS
-    const componentsByPanel = allComponents.reduce<Record<string, typeof allComponents>>(
-      (acc, comp) => {
-        if (!acc[comp.panel_id]) acc[comp.panel_id] = [];
-        acc[comp.panel_id].push(comp);
-        return acc;
+    return new NextResponse(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'no-store',
       },
-      {}
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Failed to reach logline daemon',
+        detail: error instanceof Error ? error.message : 'unknown error',
+      },
+      { status: 502 }
     );
-
-    const result = allPanels.map((p) => ({
-      panel_id:    p.panel_id,
-      name:        p.name,
-      position:    p.position,
-      version:     p.version,
-      layout_grid: { rows: 24, cols: 32 },
-      components: (componentsByPanel[p.panel_id] ?? []).map((c) => ({
-        ...(function () {
-          const def = MOCK_COMPONENTS.find((m) => m.component_id === c.component_id);
-          const normalized = normalizeRectToPresets(
-            { x: c.rect_x, y: c.rect_y, w: c.rect_w, h: c.rect_h },
-            resolveAllowedPresetIds(def),
-            { cols: 32, rows: 24 }
-          );
-          return {
-            rect: normalized.rect,
-          };
-        })(),
-        instance_id:  c.instance_id,
-        component_id: c.component_id,
-        version:      c.version,
-        front_props: JSON.parse(c.front_props) as Record<string, unknown>,
-      })),
-    }));
-
-    return NextResponse.json(result);
-  } catch (err) {
-    if (err instanceof AccessDeniedError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    console.error('[GET /api/panels]', err);
-    return NextResponse.json({ error: 'Failed to fetch panels' }, { status: 500 });
   }
 }
 
 // POST /api/panels
-// Body: { name: string }
+// Rust-owned endpoint: proxy request to logline-daemon /v1/panels.
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  const search = req.nextUrl.search || '';
+
+  let body: unknown;
   try {
-    await ensureDbSchema();
-    const access = await requireAccess(req, 'write');
-    const workspaceId = access.workspaceId;
-    const appId = access.appId;
-    const body = createPanelSchema.parse(await req.json());
-    const name = body.name ?? 'New Tab';
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
 
-    const allPanels = await db
-      .select()
-      .from(panels)
-      .where(and(eq(panels.workspace_id, workspaceId), eq(panels.app_id, appId)));
-    const maxPosition = allPanels.reduce((max, p) => Math.max(max, p.position), -1);
+  try {
+    const upstream = await callLogline(req, `/v1/panels${search}`, 'POST', body);
+    const contentType = upstream.headers.get('content-type') || 'application/json';
+    const text = await upstream.text();
 
-    const newPanel = {
-      panel_id:   crypto.randomUUID(),
-      workspace_id: workspaceId,
-      app_id: appId,
-      name,
-      position:   maxPosition + 1,
-      version:    '1.0.0',
-      created_at: new Date(),
-      updated_at: new Date(),
-    };
-
-    await db.insert(panels).values(newPanel);
-
-    return NextResponse.json(newPanel, { status: 201 });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      return NextResponse.json({ error: 'Invalid panel payload' }, { status: 400 });
-    }
-    if (err instanceof AccessDeniedError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    console.error('[POST /api/panels]', err);
-    return NextResponse.json({ error: 'Failed to create panel' }, { status: 500 });
+    return new NextResponse(text, {
+      status: upstream.status,
+      headers: {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+      },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Failed to reach logline daemon',
+        detail: error instanceof Error ? error.message : 'unknown error',
+      },
+      { status: 502 }
+    );
   }
 }
