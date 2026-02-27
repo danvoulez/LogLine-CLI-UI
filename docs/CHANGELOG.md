@@ -19,11 +19,17 @@ All notable documentation and platform changes should be recorded here.
   - `docs/DEPLOYMENT.md`
   - `docs/SECURITY.md`
   - `docs/CONTRIBUTING.md`
+  - `docs/BRAND.md`
+- Brand assets:
+  - `public/brand/logline-mark-dark.svg`
+  - `public/brand/logline-mark-light.svg`
+  - `components/brand/LoglineMark.tsx`
 
 ### Changed
 - `docs/LLM_START_HERE.md` now links to expanded doc suite.
 - `docs/ROADMAP.md` reflects workspace scoping, gateway hardening, and onboarding status.
 - Root `README.md` start pointers now reference `docs/README.md` and `docs/LLM_START_HERE.md`.
+- PWA/app icon generators now use LogLine mark instead of placeholder letter icon.
 
 ### Runtime/Platform Notes
 - UBLX app:

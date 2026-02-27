@@ -1,4 +1,5 @@
 import { ImageResponse } from 'next/og';
+import { LoglineMark } from '@/components/brand/LoglineMark';
 
 export const size = {
   width: 180,
@@ -16,15 +17,12 @@ export default function AppleIcon() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: 'linear-gradient(145deg, #202020 0%, #2d2d2d 100%)',
-          border: '1px solid rgba(255,255,255,0.14)',
+          background: 'linear-gradient(145deg, #111114 0%, #1a1a20 100%)',
+          border: '1px solid rgba(255,255,255,0.10)',
           borderRadius: '38px',
-          color: '#ffffff',
-          fontSize: 84,
-          fontWeight: 700,
         }}
       >
-        L
+        <LoglineMark size={132} inverse />
       </div>
     ),
     {

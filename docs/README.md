@@ -17,6 +17,7 @@ This folder is the operational and technical source of truth for UBLX + LogLine 
 - `TROUBLESHOOTING.md`: Symptom -> cause -> fix playbook.
 - `DEPLOYMENT.md`: Deployment topologies (Vercel, local full stack, tunnel/mobile).
 - `SECURITY.md`: Secret handling, auth boundaries, and hardening checklist.
+- `BRAND.md`: Official mark assets and usage rules.
 - `CONTRIBUTING.md`: Workflow, validation, and PR quality bar.
 - `CHANGELOG.md`: Notable platform/doc/runtime changes over time.
 - `ROADMAP.md`: Active work and next priorities.
