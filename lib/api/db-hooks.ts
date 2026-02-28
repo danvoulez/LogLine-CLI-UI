@@ -6,6 +6,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import type { PanelManifest, PanelComponentInstance } from '@/types/ublx';
+import { getAccessToken } from '@/lib/auth/supabase-browser';
 
 type ChatRow = {
   id: string;
@@ -20,9 +21,9 @@ type ChatRow = {
 };
 
 function resolveWorkspaceId(): string {
-  if (typeof window === 'undefined') return 'default';
+  if (typeof window === 'undefined') return 'ubl';
   const fromStorage = window.localStorage.getItem('ublx_workspace_id')?.trim();
-  return fromStorage || 'default';
+  return fromStorage || 'ubl';
 }
 
 function resolveAppId(): string {
@@ -31,22 +32,20 @@ function resolveAppId(): string {
   return fromStorage || 'ublx';
 }
 
-function resolveUserId(): string {
-  if (typeof window === 'undefined') return 'local-dev';
-  const fromStorage = window.localStorage.getItem('ublx_user_id')?.trim();
-  return fromStorage || 'local-dev';
-}
-
 // ── Internal fetch helper ─────────────────────────────────────────────────────
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const workspaceId = resolveWorkspaceId();
   const appId = resolveAppId();
-  const userId = resolveUserId();
   const mergedHeaders = new Headers(options?.headers);
   if (!mergedHeaders.has('Content-Type')) mergedHeaders.set('Content-Type', 'application/json');
   mergedHeaders.set('x-workspace-id', workspaceId);
   mergedHeaders.set('x-app-id', appId);
-  mergedHeaders.set('x-user-id', userId);
+
+  const token = await getAccessToken();
+  if (token) {
+    mergedHeaders.set('Authorization', `Bearer ${token}`);
+  }
+
   const res = await fetch(url, {
     ...options,
     headers: mergedHeaders,
@@ -64,17 +63,21 @@ async function gatewayFetchJson<T>(
 ): Promise<T> {
   const workspaceId = resolveWorkspaceId();
   const appId = resolveAppId();
-  const userId = resolveUserId();
+  const authToken = await getAccessToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'x-workspace-id': workspaceId,
+    'x-app-id': appId,
+    'x-llm-gateway-base-url': opts.baseUrl,
+  };
+  if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+  if (opts.token) {
+    headers['x-llm-gateway-token'] = opts.token.startsWith('Bearer ') ? opts.token.slice(7) : opts.token;
+  }
+
   const res = await fetch(`/api/llm-gateway${path}${opts.search ?? ''}`, {
     method: opts.method ?? 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-workspace-id': workspaceId,
-      'x-app-id': appId,
-      'x-user-id': userId,
-      'x-llm-gateway-base-url': opts.baseUrl,
-      ...(opts.token ? { authorization: opts.token.startsWith('Bearer ') ? opts.token : `Bearer ${opts.token}` } : {}),
-    },
+    headers,
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   });
 
@@ -91,16 +94,18 @@ async function gatewayFetchText(
 ): Promise<string> {
   const workspaceId = resolveWorkspaceId();
   const appId = resolveAppId();
-  const userId = resolveUserId();
-  const res = await fetch(`/api/llm-gateway${path}${opts.search ?? ''}`, {
-    headers: {
-      'x-workspace-id': workspaceId,
-      'x-app-id': appId,
-      'x-user-id': userId,
-      'x-llm-gateway-base-url': opts.baseUrl,
-      ...(opts.token ? { authorization: opts.token.startsWith('Bearer ') ? opts.token : `Bearer ${opts.token}` } : {}),
-    },
-  });
+  const authToken = await getAccessToken();
+  const headers: Record<string, string> = {
+    'x-workspace-id': workspaceId,
+    'x-app-id': appId,
+    'x-llm-gateway-base-url': opts.baseUrl,
+  };
+  if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+  if (opts.token) {
+    headers['x-llm-gateway-token'] = opts.token.startsWith('Bearer ') ? opts.token.slice(7) : opts.token;
+  }
+
+  const res = await fetch(`/api/llm-gateway${path}${opts.search ?? ''}`, { headers });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Gateway ${res.status}: ${text}`);

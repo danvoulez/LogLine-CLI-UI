@@ -1,0 +1,12 @@
+logline/target/
+logline/.cargo/
+data/
+.next/
+coverage/
+.git/
+docs/
+supabase/
+scripts/
+*.db
+*.db-shm
+*.db-wal

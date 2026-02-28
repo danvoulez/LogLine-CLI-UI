@@ -15,6 +15,9 @@ Status: Approved
 Approved statement:
 - HQ owns all cross-app concerns: integrations, identity/auth, policy, observability, metering, pricing/billing derivation.
 - App surfaces own domain UX and local presentation behavior only.
+- shared Rust core crates define capabilities first.
+- CLI is first implementation/validation surface for new capability flow.
+- API/MCP may expose only capabilities already validated through CLI flow governance.
 
 Exception rule:
 - temporary exception allowed only with expiry date and migration plan.

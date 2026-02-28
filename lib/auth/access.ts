@@ -15,7 +15,7 @@ export type AccessPermission = 'read' | 'write' | 'private_read';
 
 const DEFAULT_APP_ID = process.env.DEFAULT_APP_ID || 'ublx';
 const DEFAULT_USER_ID = process.env.DEFAULT_USER_ID || 'local-dev';
-const RBAC_STRICT = process.env.RBAC_STRICT === '1';
+const RBAC_STRICT = process.env.RBAC_STRICT !== '0';
 
 export class AccessDeniedError extends Error {
   status: number;

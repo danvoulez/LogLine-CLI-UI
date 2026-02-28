@@ -25,7 +25,6 @@ export async function GET(req: NextRequest, { params }: Params): Promise<NextRes
     return NextResponse.json(
       {
         error: 'Failed to reach logline daemon',
-        detail: error instanceof Error ? error.message : 'unknown error',
       },
       { status: 502 }
     );
@@ -61,7 +60,6 @@ export async function POST(req: NextRequest, { params }: Params): Promise<NextRe
     return NextResponse.json(
       {
         error: 'Failed to reach logline daemon',
-        detail: error instanceof Error ? error.message : 'unknown error',
       },
       { status: 502 }
     );

@@ -1,6 +1,6 @@
-# logline (v1 scaffold)
+# logline
 
-CLI-first architecture scaffold with runtime as source of truth.
+CLI-only ecosystem. One binary, Supabase direct, Touch ID enforced.
 
 ## Crates
 - `logline-api`: shared models + trait contracts
@@ -8,61 +8,40 @@ CLI-first architecture scaffold with runtime as source of truth.
 - `logline-core`: domain policy + catalog validation
 - `logline-connectors`: connector implementations/factory
 - `logline-runtime`: runtime engine orchestration
-- `logline-cli`: operator CLI
-- `logline-daemon`: daemon process scaffold for remote UI
+- `logline-cli`: the CLI (the only binary that matters)
 
 ## Quickstart
 ```bash
 cargo run -p logline-cli -- init
 cargo run -p logline-cli -- status
-cargo run -p logline-cli -- --json run --intent sync --arg source=iphone
-LOGLINE_DAEMON_URL=https://api.logline.world LOGLINE_DAEMON_TOKEN=dev-token \
-cargo run -p logline-cli -- auth whoami
-cargo run -p logline-cli -- supabase check --workdir /Users/ubl-ops/UBLX\ App
-cargo run -p logline-cli -- supabase link --project-ref aypxnwofjtdnmtxastti --workdir /Users/ubl-ops/UBLX\ App
-cargo run -p logline-cli -- supabase migrate --workdir /Users/ubl-ops/UBLX\ App
-LOGLINE_DAEMON_TOKEN=dev-token cargo run -p logline-daemon -- --host 127.0.0.1 --port 7600
-LOGLINE_JWKS_URL=https://issuer.example/.well-known/jwks.json \
-LOGLINE_JWT_ISSUER=https://issuer.example/ \
-LOGLINE_JWT_AUDIENCE=logline-api \
-cargo run -p logline-daemon -- --host 127.0.0.1 --port 7600
+cargo run -p logline-cli -- auth login --email you@example.com
+cargo run -p logline-cli -- auth login --passkey
+cargo run -p logline-cli -- auth unlock
+cargo run -p logline-cli -- secrets doctor
+cargo run -p logline-cli -- ready --pipeline prod
+```
+
+## Security Model
+- All secrets live in macOS Keychain, gated by Touch ID
+- No secrets on disk. Ever. No `auth.json`, no `passkey.json`, no `DATABASE_URL` in `.env`
+- Every infra command requires: Touch ID unlock + passkey login + non-founder identity
+- `logline secrets doctor` validates the entire chain
+
+## Key Commands
+```bash
+logline auth unlock              # Touch ID session (30m default)
+logline auth login --passkey     # Supabase Auth via passkey
+logline secrets set <key>        # Store credential in Keychain
+logline secrets doctor           # Full system health check
+logline ready --pipeline prod    # Pre-flight readiness check
+logline deploy all --env prod    # Full deploy: Supabase → GitHub → Vercel
+logline cicd run --pipeline prod # CI/CD pipeline execution
+logline db verify-rls            # RLS policy verification gate
+logline migrate review           # Schema diff before applying migrations
+logline migrate apply --env prod # Apply migrations (requires review)
 ```
 
 ## Notes
-- CLI/daemon load `connections.toml` from `~/.config/logline` by default.
-- If config files are missing, they fall back to an in-code demo catalog.
-- Daemon routes currently available:
-  - `GET /v1/health`
-  - `GET /v1/status`
-  - `GET /v1/events?since=<cursor>`
-  - `POST /v1/intents/run`
-  - `POST /v1/intents/stop`
-  - `POST /v1/backends/test`
-  - `POST /v1/profiles/select`
-  - `GET /v1/auth/whoami`
-  - `POST /v1/auth/session/create` (admin/bootstrap token required)
-  - `POST /v1/auth/session/revoke` (admin/bootstrap token required)
-  - `GET /v1/auth/session/list` (admin/bootstrap token required)
-- Auth:
-  - `/v1/health` is public.
-  - All other routes require `x-logline-token: <token>` or `Authorization: Bearer <token>`.
-  - Token auth: set via `--token` or `LOGLINE_DAEMON_TOKEN`.
-  - JWT auth: set JWKS via `--jwks-url` or `LOGLINE_JWKS_URL` and optionally issuer/audience via `LOGLINE_JWT_ISSUER` and `LOGLINE_JWT_AUDIENCE`.
-  - Session tokens:
-    - Create short-lived session token for mobile/UI.
-    - Session token can call protected runtime routes.
-    - Session token cannot mint/revoke other session tokens.
-  - `GET /v1/auth/whoami` reports how the current token was authenticated (`bootstrap_token`, `session_token`, or `jwt`) and returns token metadata/claims.
-  - Admin auth routes remain bootstrap-token only (JWT cannot mint/revoke/list sessions).
-  - CLI helper:
-    - `logline auth whoami --daemon-url <url> --token <token>`
-    - `logline auth tenant-resolve --daemon-url <app-url> --slug <tenant-slug>`
-    - `logline auth onboard-claim --daemon-url <app-url> --token <jwt> --tenant-slug <slug> [--display-name <name>]`
-    - `logline auth onboard-founder --daemon-url <app-url> --token <jwt> --tenant-slug <slug> [--display-name <name>] [--public-key <hex>]`
-    - Or set `LOGLINE_DAEMON_URL` and `LOGLINE_DAEMON_TOKEN`.
-  - Supabase helper:
-    - `logline supabase check --workdir <project-dir>`
-    - `logline supabase projects --workdir <project-dir>`
-    - `logline supabase link --project-ref <ref> --workdir <project-dir>`
-    - `logline supabase migrate --workdir <project-dir>`
-    - `logline supabase raw <any supabase args...>`
+- CLI loads `connections.toml` from `~/.config/logline` by default
+- If config files are missing, falls back to an in-code demo catalog
+- Supabase helper commands wrap the `supabase` CLI with Keychain token injection

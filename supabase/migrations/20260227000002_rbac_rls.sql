@@ -6,50 +6,60 @@ begin;
 -- ─── Role-check helpers ───────────────────────────────────────────────────────
 
 create or replace function app.is_tenant_member(target_tenant text)
-returns boolean language sql stable as $$
+returns boolean language sql stable
+security definer set search_path = public
+as $$
   select exists (
     select 1 from tenant_memberships tm
     where tm.tenant_id = target_tenant
-      and tm.user_id = app.current_user_id()
+      and tm.user_id = (select app.current_user_id())
   );
 $$;
 
 create or replace function app.is_tenant_admin(target_tenant text)
-returns boolean language sql stable as $$
+returns boolean language sql stable
+security definer set search_path = public
+as $$
   select exists (
     select 1 from tenant_memberships tm
     where tm.tenant_id = target_tenant
-      and tm.user_id = app.current_user_id()
+      and tm.user_id = (select app.current_user_id())
       and tm.role = 'admin'
   );
 $$;
 
 create or replace function app.is_app_member(target_tenant text, target_app text)
-returns boolean language sql stable as $$
+returns boolean language sql stable
+security definer set search_path = public
+as $$
   select exists (
     select 1 from app_memberships am
     where am.tenant_id = target_tenant
       and am.app_id = target_app
-      and am.user_id = app.current_user_id()
+      and am.user_id = (select app.current_user_id())
   );
 $$;
 
 create or replace function app.is_app_admin(target_tenant text, target_app text)
-returns boolean language sql stable as $$
+returns boolean language sql stable
+security definer set search_path = public
+as $$
   select exists (
     select 1 from app_memberships am
     where am.tenant_id = target_tenant
       and am.app_id = target_app
-      and am.user_id = app.current_user_id()
+      and am.user_id = (select app.current_user_id())
       and am.role = 'app_admin'
   );
 $$;
 
 create or replace function app.has_capability(cap text)
-returns boolean language sql stable as $$
+returns boolean language sql stable
+security definer set search_path = public
+as $$
   select exists (
     select 1 from user_capabilities uc
-    where uc.user_id = app.current_user_id()
+    where uc.user_id = (select app.current_user_id())
       and uc.capability = cap
   );
 $$;
@@ -82,7 +92,7 @@ alter table service_status_log enable row level security;
 
 drop policy if exists users_select_self on users;
 create policy users_select_self on users
-  for select using (user_id = app.current_user_id());
+  for select using (user_id = (select app.current_user_id()));
 
 -- ─── tenants ─────────────────────────────────────────────────────────────────
 
@@ -108,7 +118,7 @@ create policy apps_insert_admin on apps
 
 drop policy if exists tenant_memberships_select_self on tenant_memberships;
 create policy tenant_memberships_select_self on tenant_memberships
-  for select using (user_id = app.current_user_id());
+  for select using (user_id = (select app.current_user_id()));
 
 drop policy if exists tenant_memberships_admin_manage on tenant_memberships;
 create policy tenant_memberships_admin_manage on tenant_memberships
@@ -119,7 +129,7 @@ create policy tenant_memberships_admin_manage on tenant_memberships
 
 drop policy if exists app_memberships_select_self on app_memberships;
 create policy app_memberships_select_self on app_memberships
-  for select using (user_id = app.current_user_id());
+  for select using (user_id = (select app.current_user_id()));
 
 drop policy if exists app_memberships_admin_manage on app_memberships;
 create policy app_memberships_admin_manage on app_memberships
@@ -130,7 +140,7 @@ create policy app_memberships_admin_manage on app_memberships
 
 drop policy if exists user_capabilities_select_self on user_capabilities;
 create policy user_capabilities_select_self on user_capabilities
-  for select using (user_id = app.current_user_id());
+  for select using (user_id = (select app.current_user_id()));
 
 -- ─── tenant_email_allowlist ───────────────────────────────────────────────────
 
@@ -143,8 +153,8 @@ create policy email_allowlist_admin on tenant_email_allowlist
 
 drop policy if exists user_provider_keys_owner on user_provider_keys;
 create policy user_provider_keys_owner on user_provider_keys
-  for all using (user_id = app.current_user_id())
-  with check (user_id = app.current_user_id());
+  for all using (user_id = (select app.current_user_id()))
+  with check (user_id = (select app.current_user_id()));
 
 -- ─── cli_auth_challenges ──────────────────────────────────────────────────────
 -- Anyone can create a challenge; only owner can read own challenge status.
@@ -152,21 +162,21 @@ create policy user_provider_keys_owner on user_provider_keys
 drop policy if exists cli_challenges_select_owner on cli_auth_challenges;
 create policy cli_challenges_select_owner on cli_auth_challenges
   for select using (
-    user_id = app.current_user_id()
-    or user_id is null  -- pending challenge visible by nonce lookup via service
+    user_id = (select app.current_user_id())
+    or user_id is null
   );
 
 -- ─── founder_signing_keys ────────────────────────────────────────────────────
 
 drop policy if exists founder_keys_owner on founder_signing_keys;
 create policy founder_keys_owner on founder_signing_keys
-  for select using (user_id = app.current_user_id());
+  for select using (user_id = (select app.current_user_id()));
 
 -- ─── protected_intents ───────────────────────────────────────────────────────
 
 drop policy if exists protected_intents_actor on protected_intents;
 create policy protected_intents_actor on protected_intents
-  for select using (actor_user_id = app.current_user_id());
+  for select using (actor_user_id = (select app.current_user_id()));
 
 -- ─── protected_action_audit ──────────────────────────────────────────────────
 

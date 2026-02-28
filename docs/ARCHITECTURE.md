@@ -25,6 +25,10 @@ This document defines the current architecture and responsibility boundaries.
 4. Runtime Layer (LogLine workspace)
 - CLI + daemon + shared crates under `logline/`.
 - Handles runtime intents and daemon-side operational control.
+- Capability flow contract:
+  - shared core crates define domain capabilities,
+  - CLI is the first interface to implement and validate operator flow,
+  - API/MCP surfaces mirror CLI-validated capabilities and must not bypass or outrun CLI flow governance.
 
 5. External/Adjacent Services
 - LLM Gateway (`/v1/chat/completions`, `/metrics`, usage/fuel endpoints).
@@ -84,5 +88,7 @@ Formal behavior is documented in:
 ## 7) Design Intent
 
 - Keep business/runtime logic centralized in CLI/daemon/gateway.
+- Keep capability definition in shared Rust core crates and make CLI the first execution surface.
+- Prevent API/MCP from exposing behavior not already validated in CLI flows.
 - Keep UI modular and lightweight, focused on composition and observability.
 - Keep settings deterministic via explicit cascade and tag binding resolution.

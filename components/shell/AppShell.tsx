@@ -10,7 +10,7 @@ import { ComponentStore } from '../component-catalog/ComponentStore';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   // ── SQLite-backed data ─────────────────────────────────────────────────────
-  const { data: panels = [], isLoading } = usePanels();
+  const { data: panels = [], isLoading, isError, refetch: refetchPanels } = usePanels();
   const daemonHealth = useDaemonHealth();
   const daemonRuntimeStatus = useDaemonRuntimeStatus();
   const createPanel = useCreatePanel();
@@ -191,7 +191,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (isLoading) {
     return (
       <div className="safe-app-frame flex w-full items-center justify-center bg-[var(--shell)]">
-        <span className="text-white/20 text-xs font-mono animate-pulse tracking-widest uppercase">Initializing...</span>
+        <span className="text-white/20 text-xs font-mono animate-pulse tracking-widest uppercase">Loading...</span>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="safe-app-frame flex flex-col gap-3 w-full items-center justify-center bg-[var(--shell)]">
+        <span className="text-white/30 text-xs">Failed to load workspace</span>
+        <button onClick={() => refetchPanels()} className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-white/60 hover:text-white hover:bg-white/10 transition-colors">
+          Retry
+        </button>
       </div>
     );
   }
@@ -199,7 +210,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="safe-app-frame flex flex-col w-full bg-[var(--shell)] text-white overflow-hidden font-sans select-none">
       {/* Header */}
-      <header className="h-11 md:h-9 border-b border-white/10 flex items-center justify-between px-3 bg-[var(--tab-strip)] z-50">
+      <header className="h-11 md:h-9 flex items-center justify-between px-3 bg-[var(--shell)] z-50">
         <div className="w-1/3">
           <span className="text-[10px] font-medium text-white/30 tracking-wide">Workspace</span>
         </div>
@@ -268,7 +279,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               initial={{ opacity: 0, y: 20, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.95 }}
-              className="absolute inset-2 md:inset-3 z-[100] bg-[#252525] border border-white/10 rounded-lg md:rounded-xl overflow-hidden flex flex-col"
+              className="absolute inset-0 md:inset-3 z-[100] bg-[#252525] border-0 md:border md:border-white/10 rounded-none md:rounded-xl overflow-hidden flex flex-col"
             >
               <div className="h-auto min-h-11 border-b border-white/10 flex flex-col md:flex-row md:items-center justify-between px-3 md:px-4 py-2 md:py-0 bg-[#2b2b2b] gap-2 md:gap-4">
                 <div className="flex items-center gap-3 shrink-0">
@@ -318,44 +329,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Footer / Tab Bar */}
-      <footer className="h-14 md:h-11 border-t border-white/10 flex items-center justify-between px-3 md:px-4 bg-[var(--tab-strip)] z-50">
-        <div className="w-1/4 flex items-center">
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsTrashOver(true);
-            }}
-            onDragLeave={() => setIsTrashOver(false)}
-            onDrop={handleDropToTrash}
-            className={`mr-2 p-1.5 rounded border transition-all ${
-              isTrashOver
-                ? 'bg-red-500/20 border-red-400/40 text-red-200'
-                : 'bg-[#2c2c2c] border-white/10 text-white/35'
-            }`}
-            title="Drop component here to remove"
-          >
-            <Trash2 size={12} />
-          </div>
-          <button
-            onClick={toggleStore}
-            className={`flex items-center gap-2 px-2.5 py-1 rounded text-[9px] font-semibold uppercase tracking-wide transition-all border ${
-              isStoreOpen
-                ? 'bg-[#383838] border-white/20 text-white'
-                : 'bg-[#2c2c2c] border-white/10 text-white/40 hover:text-white/70 hover:border-white/20'
-            }`}
-          >
-            <ShoppingBag size={12} />
-            Store
-          </button>
-        </div>
-
-        {/* Labeled Tab Bar */}
-        <div className="flex-1 flex items-center justify-center gap-1.5 overflow-x-auto custom-scrollbar px-1">
+      <footer className="flex flex-col md:flex-row md:h-11 bg-[var(--shell)] z-50 border-t border-white/5">
+        {/* Tab bar row */}
+        <div className="flex items-center h-11 px-2 md:px-4 gap-1 overflow-x-auto custom-scrollbar flex-1 min-w-0">
           {panels.map((panel, idx) => {
             const Icon = icons[idx % icons.length] || Home;
             const isActive = activePanelIndex === idx;
             return (
-              <motion.div key={panel.panel_id} layout className="flex items-center gap-1">
+              <motion.div key={panel.panel_id} layout className="flex items-center gap-0.5 shrink-0">
                 {editingPanelId === panel.panel_id ? (
                   <input
                     autoFocus
@@ -369,7 +350,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         setEditName('');
                       }
                     }}
-                    className="px-2 py-1 rounded border border-white/20 bg-[#3a3a3a] text-[10px] font-medium text-white w-[104px] focus:outline-none"
+                    className="px-2 py-1 rounded border border-white/20 bg-[#3a3a3a] text-[10px] font-medium text-white w-[90px] focus:outline-none"
                   />
                 ) : (
                   <button
@@ -377,7 +358,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     onDoubleClick={() => beginRename(panel.panel_id, panel.name)}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => handleDropToPanel(panel.panel_id, e)}
-                    className={`flex items-center gap-1.5 px-2 py-1 rounded border transition-all ${
+                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded border transition-all ${
                       isActive
                         ? 'bg-[#3a3a3a] border-white/20 text-white'
                         : 'bg-transparent border-transparent text-white/30 hover:border-white/10 hover:text-white/70'
@@ -385,12 +366,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     title="Double-click to rename"
                   >
                     <Icon size={12} />
-                    <span className="text-[10px] font-medium whitespace-nowrap max-w-[80px] truncate">
+                    <span className="text-[10px] font-medium whitespace-nowrap max-w-[64px] md:max-w-[80px] truncate">
                       {panel.name}
                     </span>
-                    {isActive && idx < 9 && (
-                      <span className="text-[7px] font-mono text-white/20">{idx + 1}</span>
-                    )}
                   </button>
                 )}
                 {isActive && panels.length > 1 && (
@@ -419,22 +397,49 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               )
             }
             disabled={createPanel.isPending}
-            className="p-1.5 text-white/25 hover:text-white hover:bg-white/5 rounded transition-all ml-1 disabled:opacity-30"
+            className="p-1.5 text-white/25 hover:text-white hover:bg-white/5 rounded transition-all shrink-0 disabled:opacity-30"
             title="Add Tab"
           >
             <Plus size={16} />
           </button>
         </div>
 
-        {/* Live Global Status */}
-        <div className="w-1/4 flex justify-end">
-          <div className={`flex items-center gap-2 px-2.5 py-1 border rounded text-[8px] uppercase tracking-wide font-semibold ${statusColor}`}>
-            <div className={`w-1 h-1 rounded-full ${dotColor}`} />
-            {globalStatus}
+        {/* Toolbar row (mobile: full width, desktop: inline) */}
+        <div className="flex items-center justify-between h-10 md:h-auto px-3 md:px-2 gap-2 border-t border-white/5 md:border-t-0 md:border-l md:border-white/5 shrink-0">
+          <div className="flex items-center gap-2">
+            <div
+              onDragOver={(e) => { e.preventDefault(); setIsTrashOver(true); }}
+              onDragLeave={() => setIsTrashOver(false)}
+              onDrop={handleDropToTrash}
+              className={`p-1.5 rounded border transition-all ${
+                isTrashOver
+                  ? 'bg-red-500/20 border-red-400/40 text-red-200'
+                  : 'bg-[#2c2c2c] border-white/10 text-white/35'
+              }`}
+              title="Drop component here to remove"
+            >
+              <Trash2 size={12} />
+            </div>
+            <button
+              onClick={toggleStore}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[9px] font-semibold uppercase tracking-wide transition-all border ${
+                isStoreOpen
+                  ? 'bg-[#383838] border-white/20 text-white'
+                  : 'bg-[#2c2c2c] border-white/10 text-white/40 hover:text-white/70 hover:border-white/20'
+              }`}
+            >
+              <ShoppingBag size={12} />
+              <span className="hidden sm:inline">Store</span>
+            </button>
+          </div>
+
+          <div className={`flex items-center gap-1.5 px-2 py-1 border rounded text-[8px] uppercase tracking-wide font-semibold ${statusColor}`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
+            <span className="hidden sm:inline">{globalStatus}</span>
             {wsConnected ? (
-              <Wifi size={8} className="text-cyan-400 ml-0.5" />
+              <Wifi size={10} className="text-cyan-400" />
             ) : (
-              <WifiOff size={8} className="opacity-20 ml-0.5" />
+              <WifiOff size={10} className="opacity-20" />
             )}
           </div>
         </div>

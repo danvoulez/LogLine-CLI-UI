@@ -10,10 +10,15 @@ begin;
 -- Input: { "user": { "email": "...", "user_metadata": { "tenant_slug": "..." } } }
 -- Must return: { "decision": "continue" } or raise an exception to block.
 
-create or replace function auth.before_user_created(event jsonb)
+-- Functions live in `app` schema (auth schema requires superuser on hosted Supabase).
+-- Hooks configured via Management API: PATCH /v1/projects/{ref}/config/auth
+-- Using explicit grants instead of SECURITY DEFINER (per Supabase best practices).
+
+create or replace function app.before_user_created(event jsonb)
 returns jsonb
 language plpgsql
-security definer
+stable
+set search_path = public
 as $$
 declare
   v_email          text;
@@ -68,10 +73,11 @@ $$;
 -- Injects workspace_id / app_id into the JWT if the user has a primary membership.
 -- Input: { "user_id": "...", "claims": {...} }
 
-create or replace function auth.custom_access_token(event jsonb)
+create or replace function app.custom_access_token(event jsonb)
 returns jsonb
 language plpgsql
-security definer
+stable
+set search_path = public
 as $$
 declare
   v_user_id    text;
@@ -192,5 +198,18 @@ begin
   );
 end;
 $$;
+
+-- Auth system needs execute + table access (replaces SECURITY DEFINER)
+grant usage on schema app to supabase_auth_admin;
+grant execute on function app.before_user_created(jsonb) to supabase_auth_admin;
+grant execute on function app.custom_access_token(jsonb) to supabase_auth_admin;
+grant select on tenants to supabase_auth_admin;
+grant select on tenant_email_allowlist to supabase_auth_admin;
+grant select on tenant_memberships to supabase_auth_admin;
+grant select on app_memberships to supabase_auth_admin;
+
+-- Lock down: prevent direct RPC calls from API users
+revoke execute on function app.before_user_created(jsonb) from authenticated, anon, public;
+revoke execute on function app.custom_access_token(jsonb) from authenticated, anon, public;
 
 commit;

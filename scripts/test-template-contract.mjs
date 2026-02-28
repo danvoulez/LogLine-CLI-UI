@@ -5,7 +5,7 @@ import path from 'node:path';
 
 const root = process.cwd();
 const contractPath = path.join(root, 'lib/config/component-template.ts');
-const resolverPath = path.join(root, 'lib/config/effective-config.ts');
+const resolverPath = path.join(root, 'logline/crates/logline-daemon/src/main.rs');
 
 const contract = fs.readFileSync(contractPath, 'utf8');
 const resolver = fs.readFileSync(resolverPath, 'utf8');
@@ -20,10 +20,10 @@ const requiredContractTokens = [
 ];
 
 const requiredResolverTokens = [
-  'resolveScopedAppLayer',
-  'shouldOverrideCascade',
-  "parseImportedTags(instanceLayer, 'import_app_tags')",
-  "parseImportedTags(instanceLayer, 'import_tab_tags')",
+  'resolve_scoped_app_layer',
+  'should_override_cascade',
+  'parse_imported_tags(&instance_layer, "import_app_tags")',
+  'parse_imported_tags(&instance_layer, "import_tab_tags")',
   'app_scope',
 ];
 
@@ -32,7 +32,7 @@ for (const token of requiredContractTokens) {
   if (!contract.includes(token)) missing.push(`component-template.ts missing: ${token}`);
 }
 for (const token of requiredResolverTokens) {
-  if (!resolver.includes(token)) missing.push(`effective-config.ts missing: ${token}`);
+  if (!resolver.includes(token)) missing.push(`daemon effective-config missing: ${token}`);
 }
 
 if (missing.length > 0) {

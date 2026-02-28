@@ -25,7 +25,6 @@ export async function GET(
     return NextResponse.json(
       {
         error: 'Failed to reach logline daemon',
-        detail: error instanceof Error ? error.message : 'unknown error',
       },
       { status: 502 }
     );

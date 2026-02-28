@@ -32,7 +32,6 @@ export async function PATCH(req: NextRequest, { params }: Params): Promise<NextR
     return NextResponse.json(
       {
         error: 'Failed to reach logline daemon',
-        detail: error instanceof Error ? error.message : 'unknown error',
       },
       { status: 502 }
     );
@@ -61,7 +60,6 @@ export async function DELETE(req: NextRequest, { params }: Params): Promise<Next
     return NextResponse.json(
       {
         error: 'Failed to reach logline daemon',
-        detail: error instanceof Error ? error.message : 'unknown error',
       },
       { status: 502 }
     );

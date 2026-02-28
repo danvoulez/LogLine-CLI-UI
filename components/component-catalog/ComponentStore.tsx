@@ -120,7 +120,7 @@ export function ComponentStore() {
     <div className="w-full h-full flex flex-col gap-4">
       {/* Component Grid */}
       <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <AnimatePresence mode="popLayout">
             {filteredComponents.map((comp) => {
               const isInstalled = installedIdsInActivePanel.includes(comp.component_id);

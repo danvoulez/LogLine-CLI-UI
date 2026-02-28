@@ -21,6 +21,18 @@ Required env in Vercel:
 - `LOGLINE_DAEMON_URL` (if using `/api/logline/*`)
 - `LOGLINE_DAEMON_TOKEN` (if daemon is token-protected)
 
+**Upload secrets with Vercel CLI** (when already logged in with `vercel login`):
+
+```bash
+# From project root. Prompts for value; use Production, Preview, Development as needed.
+vercel env add LOGLINE_DAEMON_TOKEN
+vercel env add SUPABASE_JWT_SECRET
+vercel env add DATABASE_URL
+# Add other env vars the same way: vercel env add <NAME>
+```
+
+Redeploy after changing env so new values are picked up.
+
 Notes:
 - App API routes run in Vercel server context.
 - Gateway proxy route enforces host allowlist.
@@ -74,7 +86,7 @@ RBAC_STRICT=1
 SUPABASE_JWT_SECRET=...
 LLM_GATEWAY_BASE_URL=https://api.logline.world
 LLM_GATEWAY_ALLOWED_HOSTS=api.logline.world,localhost,127.0.0.1
-LOGLINE_DAEMON_URL=https://api.logline.world
+LOGLINE_DAEMON_URL=https://logline.voulezvous.tv
 LOGLINE_DAEMON_TOKEN=...
 ```
 

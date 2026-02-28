@@ -1,151 +1,138 @@
-# UBLX Start Here (Simple Guide)
+# UBLX Ecosystem — LLM Start Here
 
-This is the fastest way to understand what you can do, from terminal to UI to new logic.
+**Read this entire file before doing anything.** This is the normative guide for AI agents working in this codebase.
 
-Related docs:
-- `docs/README.md`
-- `docs/GETTING_STARTED.md`
-- `docs/ARCHITECTURE.md`
-- `docs/SETTINGS_CASCADE.md`
+## Architecture (one sentence)
 
-## 1) Open Terminal and Enter the Project
+`logline` is a CLI-only ecosystem: one Rust binary, Supabase as sole infrastructure, Touch ID as hardware root of trust. There is no daemon, no separate backend, no alternative access path.
 
-```bash
-cd "/Users/ubl-ops/UBLX App"
+## Security Model — CLI or Nothing
+
+All infrastructure operations MUST use `logline` CLI commands. There is no other way.
+
+**Why you cannot bypass it:**
+1. No `DATABASE_URL` exists anywhere on disk
+2. No API tokens exist anywhere on disk
+3. All secrets live in macOS Keychain, which requires Touch ID (hardware biometric)
+4. `psql` without a connection string does nothing
+5. Supabase PostgREST requires a valid JWT that only exists in Keychain
+6. You (the LLM) cannot simulate a fingerprint
+
+**What this means for you:**
+- NEVER attempt direct database connections
+- NEVER create `.env` files with secrets or connection strings
+- NEVER hardcode tokens, passwords, or connection strings in any file
+- When you need infrastructure access, ask the human to run CLI commands
+- The human must approve via Touch ID — this is by design
+
+## Project Structure
+
+```
+/Users/ubl-ops/UBLX App/
+├── app/                    # Next.js UI (observability dashboard)
+│   ├── api/                # API routes (PostgREST proxy, settings)
+│   └── page.tsx            # Main UI entry
+├── components/             # React components
+├── logline/                # Rust workspace (THE ecosystem)
+│   └── crates/
+│       ├── logline-cli/    # The only binary that matters
+│       ├── logline-api/    # Shared models + trait contracts
+│       ├── logline-auth/   # JWT/JWKS verification
+│       ├── logline-core/   # Domain policy + catalog
+│       ├── logline-connectors/  # Connector implementations
+│       └── logline-runtime/     # Runtime engine
+├── supabase/
+│   └── migrations/         # SQL migrations (require review before apply)
+├── docs/                   # Documentation
+├── .env                    # PUBLIC values only (anon key, URLs)
+└── logline.cicd.json       # CI/CD pipeline definition
 ```
 
-From this folder, you have two systems:
-- Next.js app (UI + API + Postgres via `DATABASE_URL`)
-- `logline` Rust workspace (CLI + daemon/API)
-
-## 2) Run the UI App (what you use day-to-day)
+## Key CLI Commands
 
 ```bash
-npm install
-npm run dev
+# Auth (requires Touch ID)
+logline auth unlock              # Open a session (30m default)
+logline auth login --passkey     # Login via passkey
+logline auth lock                # Lock session immediately
+logline auth status              # Check session status
+
+# Pre-flight
+logline secrets doctor           # Full health check
+logline ready --pipeline prod    # Pipeline readiness
+
+# Database (requires unlocked session + Keychain credentials)
+logline db tables                # List tables
+logline db query "SELECT ..."    # Execute SQL
+logline db verify-rls            # Verify RLS policies
+
+# Migrations (separated from CI/CD)
+logline db migrate status        # Show applied vs pending
+logline db migrate review        # Review pending migrations (generates receipt)
+logline db migrate apply         # Apply migrations (requires review receipt)
+
+# Deploy (requires passkey + non-founder)
+logline deploy all --env prod    # Full deploy: Supabase → GitHub → Vercel
+logline cicd run --pipeline prod # Run CI/CD pipeline
+
+# Ecosystem
+logline app list                 # List apps
+logline app create               # Register new app
+logline app handshake            # Bidirectional key exchange
+logline fuel emit                # Record fuel usage
+logline tenant create            # Create tenant
+logline tenant allowlist-add     # Add user to allowlist
 ```
 
-Open `http://localhost:3000`.
+## How to Work on This Codebase
 
-What you can do now in UI:
-- Create new tabs/panels
-- Rename tabs
-- Delete tabs
-- Open Store and add/remove components
-- Work with component layouts using size presets (`S`, `M`, `L`, `XL`, `WIDE`)
-- Use settings inheritance (app -> tab/panel -> component instance)
+### Editing Rust CLI code
+1. Edit files in `logline/crates/logline-cli/src/`
+2. Validate: `cd logline && cargo check`
+3. The human runs `logline auth unlock` + deploys when ready
 
-Main UI files:
-- `app/page.tsx`
-- `components/shell/AppShell.tsx`
-- `components/panel/GridCanvas.tsx`
-- `components/panel/ComponentRenderer.tsx`
+### Editing Next.js UI code
+1. Edit files in `app/`, `components/`, `lib/`
+2. The human runs `npm run dev` to test locally
+3. UI is observability only — it cannot modify infrastructure
 
-## 3) Run the Rust CLI/Daemon (logic/API layer)
+### Adding database migrations
+1. Create a new `.sql` file in `supabase/migrations/` with timestamp prefix
+2. The human reviews with `logline db migrate review`
+3. The human applies with `logline db migrate apply --env prod`
+4. You CANNOT apply migrations directly — no database credentials on disk
 
-```bash
-cd "/Users/ubl-ops/UBLX App/logline"
-cargo check
-```
+### CI/CD pipeline
+- Defined in `logline.cicd.json`
+- CI/CD blocks if migrations are pending (must apply first)
+- Runs via `logline cicd run --pipeline prod`
 
-Run CLI locally:
+## What NOT to Do
 
-```bash
-cargo run -p logline-cli -- init
-cargo run -p logline-cli -- status
-```
+| Action | Why it fails |
+|---|---|
+| `psql postgresql://...` | No connection string exists on disk |
+| `curl -H "Authorization: Bearer ..."` | No tokens exist on disk |
+| Create `.env` with `DATABASE_URL` | Violates security model; `secrets doctor` will flag it |
+| Direct Supabase Dashboard edits | Bypasses CLI audit trail |
+| Install a separate database | All data lives in one Supabase project |
+| Start a daemon or server process | The CLI is the only binary |
 
-Run daemon locally:
+## Supabase Infrastructure
 
-```bash
-LOGLINE_DAEMON_TOKEN=dev-token cargo run -p logline-daemon -- --host 127.0.0.1 --port 7600
-```
+Single project: `aypxnwofjtdnmtxastti.supabase.co`
 
-Query identity:
+Used for:
+- **Auth**: Users, passkeys, sessions (Supabase Auth)
+- **Postgres**: All data, RLS on every table
+- **PostgREST**: CLI and UI access, always via JWT
+- **Realtime**: Future observability live feed
+- **Storage**: Future receipts and artifacts
 
-```bash
-LOGLINE_DAEMON_URL=http://127.0.0.1:7600 LOGLINE_DAEMON_TOKEN=dev-token \
-cargo run -p logline-cli -- --json auth whoami
-```
+## Quick Mental Model
 
-## 4) Existing Logic: UI vs Code
-
-Use existing logic via UI:
-- Run `npm run dev`
-- Use tab bar + Store + component interactions
-- UI talks to API routes under `app/api/*`
-
-Use existing logic via code (without UI):
-- Use React Query hooks in `lib/api/db-hooks.ts`
-- Call REST routes in `app/api/*`
-- Use Rust CLI/daemon in `logline/`
-
-Key settings inheritance implementation:
-- Resolver: `lib/config/effective-config.ts`
-- API endpoint: `app/api/effective-config/[instanceId]/route.ts`
-- Panel settings: `app/api/panel-settings/[panelId]/route.ts`
-- Instance settings: `app/api/instance-configs/[instanceId]/route.ts`
-- App settings: `app/api/settings/route.ts`
-- Gateway proxy (allowlisted): `app/api/llm-gateway/[...path]/route.ts`
-
-## 5) LLM Gateway + Onboarding Basics
-
-UI side:
-- Save `llm_gateway_base_url` and `llm_gateway_api_key` in App Settings.
-- Those are applied through tag bindings and consumed by Chat/Observability widgets.
-- Proxy route `/api/llm-gateway/*` only forwards to allowlisted hosts.
-
-Agent side (LAB256-Agent):
-- Agent uses `POST /v1/onboarding/sync` with `CLI_JWT` to get/rotate app key.
-- Issued key is cached locally and used to call `/v1/chat/completions`.
-- If onboarding fails, cached key is used as fallback.
-
-Runbook for real machine operations:
-- `docs/LAB256_AGENT_GATEWAY_RUNBOOK.md`
-
-## 6) How to Add New Logic
-
-### A) Add a new visual component (UI component)
-
-1. Create component file in `components/component-catalog/`, for example `MyWidget.tsx`.
-2. Register manifest in `mocks/ublx-mocks.ts`:
-- add `component_id`
-- add `allowed_size_presets`
-- add `default_size_preset`
-- add size `limits`
-3. Add render case in `components/panel/ComponentRenderer.tsx` switch.
-4. If it needs config persistence, use:
-- app-level: `app/api/settings/route.ts`
-- panel-level: `app/api/panel-settings/[panelId]/route.ts`
-- instance-level: `app/api/instance-configs/[instanceId]/route.ts`
-
-### B) Add a new API logic path in Next.js
-
-1. Add route under `app/api/.../route.ts`.
-2. Add client hook in `lib/api/db-hooks.ts`.
-3. Use the hook from a UI component.
-4. If needed, add DB schema/table updates in:
-- `db/schema.ts`
-- `db/seed.ts`
-
-### C) Add new CLI/daemon logic in Rust (`logline`)
-
-1. Add CLI command in `logline/crates/logline-cli/src/main.rs`.
-2. Add daemon endpoint in `logline/crates/logline-daemon/src/main.rs`.
-3. If contract/model changes are needed, update:
-- `logline/crates/logline-api/src/lib.rs`
-- `logline/crates/logline-runtime/src/*`
-- `logline/crates/logline-core/src/lib.rs`
-4. Validate:
-
-```bash
-cd "/Users/ubl-ops/UBLX App/logline"
-cargo check
-```
-
-## 7) Quick Mental Model
-
-- UI is the operator surface.
-- `app/api/*` is the app-side logic bridge.
-- `logline` daemon/CLI is runtime logic and remote-control layer.
-- Config priority is designed as app defaults -> panel settings -> instance settings.
+- The **CLI** is the ecosystem. It does everything.
+- The **UI** is observability. It shows data. It cannot change infrastructure.
+- **Supabase** is the sole infrastructure. One project, one database, one auth system.
+- **Touch ID** is the enforcement. Hardware security that no software can bypass.
+- **Secrets Doctor** validates the entire chain. Run it when unsure.

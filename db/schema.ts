@@ -2,6 +2,7 @@ import {
   pgTable,
   text,
   integer,
+  numeric,
   timestamp,
   serial,
   unique,
@@ -207,6 +208,19 @@ export const cliAuthChallenges = pgTable('cli_auth_challenges', {
   created_at:    timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
+// ─── 15b. CLI passkey credentials ───────────────────────────────────────────
+
+export const cliPasskeyCredentials = pgTable('cli_passkey_credentials', {
+  credential_id: text('credential_id').primaryKey(),
+  user_id:       text('user_id').notNull().references(() => users.user_id, { onDelete: 'cascade' }),
+  device_name:   text('device_name').notNull(),
+  public_key:    text('public_key').notNull(),
+  algorithm:     text('algorithm').notNull().default('ed25519'),
+  status:        text('status').notNull().default('active'), // active | revoked
+  created_at:    timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  last_used_at:  timestamp('last_used_at', { withTimezone: true, mode: 'date' }),
+}, (t) => [unique().on(t.user_id, t.device_name)]);
+
 // ─── 16. Founder signing keys ─────────────────────────────────────────────────
 
 export const founderSigningKeys = pgTable('founder_signing_keys', {
@@ -251,7 +265,39 @@ export const protectedActionAudit = pgTable('protected_action_audit', {
   recorded_at:      timestamp('recorded_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 });
 
+// ─── 20. App service config (onboarding handshake: App → HQ credentials) ────
+
+export const appServiceConfig = pgTable('app_service_config', {
+  app_id:            text('app_id').notNull().references(() => apps.app_id, { onDelete: 'cascade' }),
+  tenant_id:         text('tenant_id').notNull().references(() => tenants.tenant_id, { onDelete: 'cascade' }),
+  service_url:       text('service_url'),
+  api_key_encrypted: text('api_key_encrypted'),
+  capabilities:      jsonb('capabilities').notNull().default([]),
+  status:            text('status').notNull().default('pending'),
+  onboarded_at:      timestamp('onboarded_at', { withTimezone: true, mode: 'date' }),
+  onboarded_by:      text('onboarded_by').references(() => users.user_id),
+  created_at:        timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  updated_at:        timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+}, (t) => [unique().on(t.app_id, t.tenant_id)]);
+
+// ─── 21. Fuel events ledger (normalized, append-only) ───────────────────────
+
+export const fuelEvents = pgTable('fuel_events', {
+  event_id:        text('event_id').primaryKey(),
+  idempotency_key: text('idempotency_key').notNull().unique(),
+  tenant_id:       text('tenant_id').notNull().references(() => tenants.tenant_id),
+  app_id:          text('app_id').notNull().references(() => apps.app_id),
+  user_id:         text('user_id').notNull().references(() => users.user_id),
+  units:           numeric('units').notNull(),
+  unit_type:       text('unit_type').notNull(),
+  occurred_at:     timestamp('occurred_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  source:          text('source').notNull(),
+  metadata:        jsonb('metadata').default({}),
+  created_at:      timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+});
+
 // ─── Inferred types ───────────────────────────────────────────────────────────
+export type CliPasskeyCredential = typeof cliPasskeyCredentials.$inferSelect;
 export type Panel              = typeof panels.$inferSelect;
 export type NewPanel           = typeof panels.$inferInsert;
 export type PanelComponent     = typeof panelComponents.$inferSelect;
@@ -277,3 +323,6 @@ export type CliAuthChallenge   = typeof cliAuthChallenges.$inferSelect;
 export type FounderSigningKey  = typeof founderSigningKeys.$inferSelect;
 export type ProtectedIntent    = typeof protectedIntents.$inferSelect;
 export type ProtectedActionAuditEntry = typeof protectedActionAudit.$inferSelect;
+export type AppServiceConfig  = typeof appServiceConfig.$inferSelect;
+export type FuelEvent         = typeof fuelEvents.$inferSelect;
+export type NewFuelEvent      = typeof fuelEvents.$inferInsert;

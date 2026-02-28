@@ -16,6 +16,7 @@ This document defines the app-side API surface under `app/api/*`.
 Identity sources:
 - JWT mode (`AUTH_PROVIDER_MODE=jwt`): `Authorization: Bearer <supabase_jwt>`.
 - Compat mode (`AUTH_PROVIDER_MODE=compat`): `x-user-id` or `user_id` query.
+- `SUPABASE_ACCOUNT_TOKEN` / `SUPABASE_ACCESS_TOKEN` are CLI/account tokens and are not accepted as API Bearer JWTs.
 
 Scope sources:
 - Tenant/workspace: `x-workspace-id` or `workspace_id` query, default `DEFAULT_WORKSPACE_ID`.

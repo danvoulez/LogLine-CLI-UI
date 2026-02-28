@@ -212,7 +212,7 @@ Instance-level overrides (app/api/instance-configs/[instanceId]/route.ts)
 ```
 
 The resolver that figures out the final effective config for any component is at:
-`lib/config/effective-config.ts`
+`logline/crates/logline-daemon/src/main.rs` (`get_effective_config`)
 
 And you can query it via:
 `app/api/effective-config/[instanceId]/route.ts`

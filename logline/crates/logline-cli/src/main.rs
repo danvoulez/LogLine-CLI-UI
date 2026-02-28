@@ -1,9 +1,11 @@
+mod commands;
+mod integrations;
+mod supabase;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
-use std::process::{Command, Output, Stdio};
-use std::thread;
-use std::time::Duration;
+use std::process::{Command, Stdio};
 
 use clap::{Parser, Subcommand};
 use logline_api::{Intent, RuntimeEngine};
@@ -11,17 +13,25 @@ use logline_core::{
     default_config_dir, demo_catalog, load_catalog_from_dir, write_default_config_files,
 };
 use logline_runtime::LoglineRuntime;
-use qrcode::{QrCode, render::unicode};
-use serde::{Deserialize, Serialize};
+
+use crate::commands::auth_session;
+use crate::commands::cicd;
+use crate::commands::db;
+use crate::commands::deploy;
+use crate::commands::dev;
+use crate::commands::secrets;
+use crate::supabase::{
+    SupabaseClient, SupabaseConfig, StoredAuth,
+    get_valid_token, load_auth, save_auth, delete_auth,
+    load_passkey, save_passkey,
+};
 
 #[derive(Debug, Parser)]
-#[command(name = "logline", about = "Logline CLI (runtime-first scaffold)")]
+#[command(name = "logline", about = "Logline CLI — one binary, Supabase direct")]
 struct Cli {
-    /// Output JSON instead of text
     #[arg(long, global = true)]
     json: bool,
 
-    /// Config directory (contains connections.toml/runtime.toml/ui.toml)
     #[arg(long, global = true)]
     config_dir: Option<PathBuf>,
 
@@ -31,46 +41,90 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Initialize local config skeleton (placeholder)
     Init {
         #[arg(long)]
         force: bool,
     },
-    /// Runtime status
     Status,
-    /// Run an intent by type
     Run {
         #[arg(long)]
         intent: String,
         #[arg(long = "arg", value_parser = parse_key_val)]
         args: Vec<(String, String)>,
     },
-    /// Stop a running job
     Stop { run_id: String },
-    /// Read runtime events
     Events {
         #[arg(long)]
         since: Option<String>,
     },
-    /// Profile operations
     Profile {
         #[command(subcommand)]
         command: ProfileCommands,
     },
-    /// Backend operations
     Backend {
         #[command(subcommand)]
         command: BackendCommands,
     },
-    /// Authentication operations
+    /// Authentication
     Auth {
         #[command(subcommand)]
         command: AuthCommands,
     },
-    /// Supabase CLI helper commands (migration/check wrapper)
+    /// Founder operations (bootstrap, signing)
+    Founder {
+        #[command(subcommand)]
+        command: FounderCommands,
+    },
+    /// App management (create, handshake, config)
+    App {
+        #[command(subcommand)]
+        command: AppCommands,
+    },
+    /// Tenant management
+    Tenant {
+        #[command(subcommand)]
+        command: TenantCommands,
+    },
+    /// Fuel ledger
+    Fuel {
+        #[command(subcommand)]
+        command: FuelCommands,
+    },
+    /// Supabase CLI helper commands
     Supabase {
         #[command(subcommand)]
         command: SupabaseCommands,
+    },
+    /// Credential vault — store/retrieve secrets in macOS Keychain
+    Secrets {
+        #[command(subcommand)]
+        command: secrets::SecretsCommands,
+    },
+    /// Database operations (query, tables, migrations, RLS verification)
+    Db {
+        #[command(subcommand)]
+        command: db::DbCommands,
+    },
+    /// Development commands (build, start, migrate with injected credentials)
+    Dev {
+        #[command(subcommand)]
+        command: dev::DevCommands,
+    },
+    /// Deploy to production (supabase, github, vercel, or all)
+    Deploy {
+        #[command(subcommand)]
+        command: deploy::DeployCommands,
+    },
+    /// CI/CD pipeline runner (reads logline.cicd.json)
+    Cicd {
+        #[command(subcommand)]
+        command: cicd::CicdCommands,
+    },
+    /// Pre-flight check: vault + session + identity + pipeline readiness
+    Ready {
+        /// Pipeline to check readiness for
+        #[arg(long, default_value = "prod")]
+        pipeline: String,
     },
 }
 
@@ -88,114 +142,146 @@ enum BackendCommands {
 
 #[derive(Debug, Subcommand)]
 enum AuthCommands {
-    /// Show identity resolved by daemon for current token
-    Whoami {
-        /// Daemon base URL, e.g. https://api.logline.world
-        #[arg(long)]
-        daemon_url: Option<String>,
-        /// Auth token (Bearer JWT). If omitted, uses stored token.
-        #[arg(long)]
-        token: Option<String>,
+    /// Unlock session with Touch ID (required before any privileged command)
+    Unlock {
+        /// Session TTL (e.g. "5m", "30m", "2h"). Default: 30m
+        #[arg(long, default_value = "30m")]
+        ttl: String,
     },
-    /// Login via QR code (scan with authenticated mobile/web session)
+    /// Lock session immediately (revoke access)
+    Lock,
+    /// Show session status and remaining TTL
+    Status,
+    /// Login with email/password (Supabase Auth direct)
     Login {
-        /// Daemon base URL, e.g. https://api.logline.world
+        /// Email address
         #[arg(long)]
-        daemon_url: Option<String>,
-        /// Use QR code flow
+        email: Option<String>,
+        /// Use passkey (Touch ID) to unlock stored refresh token
         #[arg(long)]
-        qr: bool,
-        /// Friendly device name for audit logs
+        passkey: bool,
+    },
+    /// Register a passkey (Ed25519 keypair + Touch ID gate)
+    PasskeyRegister {
+        /// Device name for this passkey
         #[arg(long)]
         device_name: Option<String>,
     },
-    /// Resolve tenant metadata before onboarding.
-    TenantResolve {
-        /// API base URL, e.g. http://localhost:3000
-        #[arg(long)]
-        daemon_url: Option<String>,
-        /// Tenant slug to resolve
-        #[arg(long)]
-        slug: String,
-    },
-    /// Claim onboarding membership for an authenticated user.
-    OnboardClaim {
-        /// API base URL, e.g. http://localhost:3000
-        #[arg(long)]
-        daemon_url: Option<String>,
-        /// Auth token (Bearer JWT). If omitted, uses stored token.
-        #[arg(long)]
-        token: Option<String>,
-        /// Tenant slug to claim
-        #[arg(long)]
-        tenant_slug: String,
-        /// Optional display name to set on first claim
-        #[arg(long)]
-        display_name: Option<String>,
-    },
-    /// Founder onboarding helper:
-    /// 1) onboard claim, 2) whoami validation, 3) optional founder key register.
-    OnboardFounder {
-        /// API base URL, e.g. http://localhost:3000
-        #[arg(long)]
-        daemon_url: Option<String>,
-        /// Auth token (Bearer JWT). If omitted, uses stored token.
-        #[arg(long)]
-        token: Option<String>,
-        /// Tenant slug to claim
-        #[arg(long)]
-        tenant_slug: String,
-        /// Optional display name to set on first claim
-        #[arg(long)]
-        display_name: Option<String>,
-        /// Optional founder public key (hex) to register
-        #[arg(long)]
-        public_key: Option<String>,
-        /// Signing key algorithm for founder key registration
-        #[arg(long, default_value = "ed25519")]
-        algorithm: String,
-    },
-    /// Show stored auth status
-    Status {
-        /// Daemon base URL
-        #[arg(long)]
-        daemon_url: Option<String>,
-    },
-    /// Remove the stored auth token
+    /// Show current identity
+    Whoami,
+    /// Remove stored tokens and logout
     Logout,
 }
 
 #[derive(Debug, Subcommand)]
+enum FounderCommands {
+    /// One-time world bootstrap (creates tenant, user, memberships, founder cap)
+    Bootstrap {
+        /// Tenant slug for the HQ tenant
+        #[arg(long)]
+        tenant_slug: String,
+        /// Tenant display name
+        #[arg(long)]
+        tenant_name: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum AppCommands {
+    /// Register a new app under the current tenant
+    Create {
+        #[arg(long)]
+        app_id: String,
+        #[arg(long)]
+        name: String,
+    },
+    /// Bidirectional handshake: store the app's service URL and API key
+    Handshake {
+        #[arg(long)]
+        app_id: String,
+        #[arg(long)]
+        service_url: String,
+        #[arg(long)]
+        api_key: Option<String>,
+        /// Comma-separated capabilities
+        #[arg(long)]
+        capabilities: Option<String>,
+    },
+    /// Export ecosystem config JSON for an app to consume
+    ConfigExport {
+        #[arg(long)]
+        app_id: String,
+    },
+    /// List apps in the current tenant
+    List,
+}
+
+#[derive(Debug, Subcommand)]
+enum TenantCommands {
+    /// Create a new tenant (founder only)
+    Create {
+        #[arg(long)]
+        slug: String,
+        #[arg(long)]
+        name: String,
+    },
+    /// Add an email to the tenant allowlist
+    AllowlistAdd {
+        #[arg(long)]
+        email: String,
+        #[arg(long, default_value = "member")]
+        role: String,
+        /// Comma-separated app:role pairs (e.g. "ublx:member,llm-gateway:member")
+        #[arg(long)]
+        app_defaults: Option<String>,
+    },
+    /// Resolve tenant by slug
+    Resolve {
+        #[arg(long)]
+        slug: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum FuelCommands {
+    /// Emit a fuel event
+    Emit {
+        #[arg(long)]
+        app_id: String,
+        #[arg(long)]
+        units: f64,
+        #[arg(long)]
+        unit_type: String,
+        #[arg(long)]
+        source: String,
+        #[arg(long)]
+        idempotency_key: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum SupabaseCommands {
-    /// Quick health check (version, projects list, linked migrations)
+    /// Store Supabase access token in OS keychain (never on disk)
+    StoreToken,
     Check {
-        /// Supabase workdir (where supabase/config.toml lives)
         #[arg(long)]
         workdir: Option<PathBuf>,
     },
-    /// List projects in current Supabase account
     Projects {
-        /// Supabase workdir (used to load .env token fallback)
         #[arg(long)]
         workdir: Option<PathBuf>,
     },
-    /// Link local folder to a Supabase project ref
     Link {
         #[arg(long)]
         project_ref: String,
-        /// Supabase workdir (where supabase/config.toml lives)
         #[arg(long)]
         workdir: Option<PathBuf>,
     },
-    /// Push pending migrations to linked project
     Migrate {
-        /// Supabase workdir (where supabase/config.toml lives)
         #[arg(long)]
         workdir: Option<PathBuf>,
     },
-    /// Pass-through command to supabase CLI
     Raw {
-        /// Supabase workdir (where supabase/config.toml lives)
         #[arg(long)]
         workdir: Option<PathBuf>,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -203,112 +289,883 @@ enum SupabaseCommands {
     },
 }
 
-#[derive(Debug, Deserialize)]
-struct DaemonError {
-    error: String,
-}
+fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+    let cfg_dir = cli.config_dir.clone().unwrap_or_else(default_config_dir);
 
-#[derive(Debug, Serialize, Deserialize)]
-struct StoredAuth {
-    token: String,
-    daemon_url: String,
-    user_id: Option<String>,
-    email: Option<String>,
-    saved_at: u64,
-}
+    let catalog = match load_catalog_from_dir(&cfg_dir) {
+        Ok(c) => c,
+        Err(_) => demo_catalog(),
+    };
+    let runtime = LoglineRuntime::from_catalog(catalog.clone())?;
 
-#[derive(Debug, Deserialize)]
-struct ChallengeResponse {
-    challenge_id: String,
-    #[allow(dead_code)]
-    nonce: String,
-    expires_at: String,
-    challenge_url: String,
-}
+    match cli.command {
+        Commands::Init { force } => {
+            if force && cfg_dir.exists() {
+                for name in ["connections.toml", "runtime.toml", "ui.toml"] {
+                    let p = cfg_dir.join(name);
+                    if p.exists() {
+                        fs::remove_file(&p)?;
+                    }
+                }
+            }
+            write_default_config_files(&cfg_dir)?;
+            pout(cli.json, serde_json::json!({"message":"init complete","config_dir":cfg_dir}), "Init complete")?;
+        }
+        Commands::Status => {
+            let status = runtime.status()?;
+            pout(cli.json, serde_json::to_value(status)?, "Runtime status retrieved")?;
+        }
+        Commands::Run { intent, args } => {
+            let payload = BTreeMap::from_iter(args);
+            let result = runtime.run_intent(Intent { intent_type: intent, payload })?;
+            pout(cli.json, serde_json::to_value(result)?, "Intent accepted")?;
+        }
+        Commands::Stop { run_id } => {
+            runtime.stop_run(run_id.clone())?;
+            pout(cli.json, serde_json::json!({"ok":true,"run_id":run_id}), "Stop signal sent")?;
+        }
+        Commands::Events { since } => {
+            let events = runtime.events_since(since)?;
+            pout(cli.json, serde_json::to_value(events)?, "Events fetched")?;
+        }
+        Commands::Profile { command } => match command {
+            ProfileCommands::List => {
+                let profiles: Vec<_> = catalog.profiles.keys().cloned().collect();
+                pout(cli.json, serde_json::to_value(profiles)?, "Profiles listed")?;
+            }
+            ProfileCommands::Use { profile_id } => {
+                runtime.select_profile(profile_id.clone())?;
+                pout(cli.json, serde_json::json!({"ok":true,"active_profile":profile_id}), "Profile selected")?;
+            }
+        },
+        Commands::Backend { command } => match command {
+            BackendCommands::List => {
+                let backends: Vec<_> = catalog.backends.keys().cloned().collect();
+                pout(cli.json, serde_json::to_value(backends)?, "Backends listed")?;
+            }
+            BackendCommands::Test { backend_id } => {
+                runtime.test_backend(backend_id.clone())?;
+                pout(cli.json, serde_json::json!({"ok":true,"backend_id":backend_id}), "Backend health check passed")?;
+            }
+        },
 
-#[derive(Debug, Deserialize)]
-struct ChallengeStatus {
-    status: String,
-    session_token: Option<String>,
-}
+        // ─── Auth ───────────────────────────────────────────────────────
+        Commands::Auth { command } => {
+            match &command {
+                AuthCommands::Unlock { ttl } => {
+                    return auth_session::cmd_auth_session(
+                        auth_session::SessionCommands::Unlock { ttl: ttl.clone() },
+                        cli.json,
+                    );
+                }
+                AuthCommands::Lock => {
+                    return auth_session::cmd_auth_session(
+                        auth_session::SessionCommands::Lock,
+                        cli.json,
+                    );
+                }
+                AuthCommands::Status => {
+                    return auth_session::cmd_auth_session(
+                        auth_session::SessionCommands::Status,
+                        cli.json,
+                    );
+                }
+                _ => {}
+            }
 
-#[derive(Debug, Deserialize)]
-struct WhoamiResponse {
-    user_id: String,
-    email: Option<String>,
-    #[allow(dead_code)]
-    display_name: Option<String>,
-    #[allow(dead_code)]
-    capabilities: Option<Vec<String>>,
-}
+            let config = SupabaseConfig::from_env_or_file()?;
+            let client = SupabaseClient::new(config)?;
 
-fn auth_token_path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("logline")
-        .join("auth.json")
-}
+            match command {
+                AuthCommands::Unlock { .. } | AuthCommands::Lock | AuthCommands::Status => unreachable!(),
+                AuthCommands::Login { email, passkey } => {
+                    if passkey {
+                        cmd_login_passkey(&client, cli.json)?;
+                    } else {
+                        let email = email.ok_or_else(|| {
+                            anyhow::anyhow!("--email <address> is required.\nUsage: logline auth login --email you@example.com")
+                        })?;
+                        cmd_login_email(&client, &email, cli.json)?;
+                    }
+                }
+                AuthCommands::PasskeyRegister { device_name } => {
+                    cmd_passkey_register(&client, device_name, cli.json)?;
+                }
+                AuthCommands::Whoami => {
+                    cmd_whoami(&client, cli.json)?;
+                }
+                AuthCommands::Logout => {
+                    delete_auth()?;
+                    pout(cli.json, serde_json::json!({"ok":true}), "Logged out. All local tokens removed.")?;
+                }
+            }
+        }
 
-fn load_stored_auth() -> Option<StoredAuth> {
-    let path = auth_token_path();
-    let content = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&content).ok()
-}
+        // ─── Founder ────────────────────────────────────────────────────
+        Commands::Founder { command } => {
+            let config = SupabaseConfig::from_env_or_file()?;
+            let client = SupabaseClient::new(config)?;
 
-fn save_stored_auth(auth: &StoredAuth) -> anyhow::Result<()> {
-    let path = auth_token_path();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+            match command {
+                FounderCommands::Bootstrap { tenant_slug, tenant_name } => {
+                    cmd_founder_bootstrap(&client, &tenant_slug, &tenant_name, cli.json)?;
+                }
+            }
+        }
+
+        // ─── App ────────────────────────────────────────────────────────
+        Commands::App { command } => {
+            let config = SupabaseConfig::from_env_or_file()?;
+            let client = SupabaseClient::new(config)?;
+
+            match command {
+                AppCommands::Create { app_id, name } => {
+                    cmd_app_create(&client, &app_id, &name, cli.json)?;
+                }
+                AppCommands::Handshake { app_id, service_url, api_key, capabilities } => {
+                    cmd_app_handshake(&client, &app_id, &service_url, api_key.as_deref(), capabilities.as_deref(), cli.json)?;
+                }
+                AppCommands::ConfigExport { app_id } => {
+                    cmd_app_config_export(&client, &app_id, cli.json)?;
+                }
+                AppCommands::List => {
+                    cmd_app_list(&client, cli.json)?;
+                }
+            }
+        }
+
+        // ─── Tenant ─────────────────────────────────────────────────────
+        Commands::Tenant { command } => {
+            let config = SupabaseConfig::from_env_or_file()?;
+            let client = SupabaseClient::new(config)?;
+
+            match command {
+                TenantCommands::Create { slug, name } => {
+                    cmd_tenant_create(&client, &slug, &name, cli.json)?;
+                }
+                TenantCommands::AllowlistAdd { email, role, app_defaults } => {
+                    cmd_tenant_allowlist_add(&client, &email, &role, app_defaults.as_deref(), cli.json)?;
+                }
+                TenantCommands::Resolve { slug } => {
+                    cmd_tenant_resolve(&client, &slug, cli.json)?;
+                }
+            }
+        }
+
+        // ─── Fuel ───────────────────────────────────────────────────────
+        Commands::Fuel { command } => {
+            let config = SupabaseConfig::from_env_or_file()?;
+            let client = SupabaseClient::new(config)?;
+
+            match command {
+                FuelCommands::Emit { app_id, units, unit_type, source, idempotency_key } => {
+                    cmd_fuel_emit(&client, &app_id, units, &unit_type, &source, idempotency_key.as_deref(), cli.json)?;
+                }
+            }
+        }
+
+        // ─── New CLI-Only commands ──────────────────────────────────────
+        Commands::Secrets { command } => {
+            return secrets::cmd_secrets(command, cli.json);
+        }
+        Commands::Db { command } => {
+            return db::cmd_db(command, cli.json);
+        }
+        Commands::Dev { command } => {
+            return dev::cmd_dev(command, cli.json);
+        }
+        Commands::Deploy { command } => {
+            return deploy::cmd_deploy(command, cli.json);
+        }
+        Commands::Cicd { command } => {
+            return cicd::cmd_cicd(command, cli.json);
+        }
+        Commands::Ready { pipeline } => {
+            return cmd_ready(&pipeline, cli.json);
+        }
+
+        // ─── Supabase CLI helpers (legacy) ──────────────────────────────
+        Commands::Supabase { command } => match command {
+            SupabaseCommands::StoreToken => {
+                let token = rpassword::prompt_password("Supabase Access Token (paste, hidden): ")?;
+                if token.trim().is_empty() {
+                    anyhow::bail!("Token cannot be empty");
+                }
+                let entry = keyring::Entry::new("logline-cli", "supabase_access_token")
+                    .map_err(|e| anyhow::anyhow!("Keychain error: {e}"))?;
+                entry.set_password(token.trim())
+                    .map_err(|e| anyhow::anyhow!("Failed to store in keychain: {e}"))?;
+                pout(cli.json, serde_json::json!({"ok": true}), "Supabase access token stored in OS keychain.")?;
+            }
+            SupabaseCommands::Check { workdir } => {
+                println!("supabase version:");
+                run_supabase_stream(&["--version"], workdir.as_ref())?;
+                println!("\nProjects:");
+                run_supabase_stream(&["projects", "list"], workdir.as_ref())?;
+            }
+            SupabaseCommands::Projects { workdir } => {
+                run_supabase_stream(&["projects", "list"], workdir.as_ref())?;
+            }
+            SupabaseCommands::Link { project_ref, workdir } => {
+                run_supabase_stream(&["link", "--project-ref", &project_ref], workdir.as_ref())?;
+            }
+            SupabaseCommands::Migrate { workdir } => {
+                run_supabase_stream(&["db", "push"], workdir.as_ref())?;
+            }
+            SupabaseCommands::Raw { workdir, args } => {
+                let str_args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                run_supabase_stream(&str_args, workdir.as_ref())?;
+            }
+        },
     }
-    fs::write(&path, serde_json::to_string_pretty(auth)?)?;
-    // Restrict to owner-only on Unix.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
-    }
+
     Ok(())
 }
 
-fn delete_stored_auth() -> anyhow::Result<()> {
-    let path = auth_token_path();
-    if path.exists() {
-        fs::remove_file(path)?;
+// ═══════════════════════════════════════════════════════════════════════════
+// Command implementations
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn cmd_login_email(client: &SupabaseClient, email: &str, json: bool) -> anyhow::Result<()> {
+    let password = rpassword::prompt_password(format!("Password for {email}: "))?;
+    if password.is_empty() {
+        anyhow::bail!("Password cannot be empty");
     }
+
+    let resp = client.login_email(email, &password)?;
+    let now = now_secs();
+
+    let stored = StoredAuth {
+        access_token: resp.access_token,
+        refresh_token: resp.refresh_token,
+        user_id: Some(resp.user.id.clone()),
+        email: resp.user.email.clone(),
+        expires_at: Some(now + resp.expires_in),
+        auth_method: Some("password".into()),
+    };
+    save_auth(&stored)?;
+
+    pout(json, serde_json::json!({
+        "ok": true,
+        "user_id": resp.user.id,
+        "email": resp.user.email,
+        "auth_method": "password",
+    }), &format!("Logged in as {} ({})", resp.user.email.as_deref().unwrap_or("?"), resp.user.id))?;
+
     Ok(())
 }
 
-fn render_qr_terminal(url: &str) {
-    match QrCode::new(url.as_bytes()) {
-        Ok(code) => {
-            let image = code
-                .render::<unicode::Dense1x2>()
-                .dark_color(unicode::Dense1x2::Dark)
-                .light_color(unicode::Dense1x2::Light)
-                .build();
-            println!("\n{image}\n");
-        }
-        Err(e) => {
-            eprintln!("QR render error: {e}");
-        }
+fn cmd_login_passkey(client: &SupabaseClient, json: bool) -> anyhow::Result<()> {
+    let auth = load_auth().ok_or_else(|| {
+        anyhow::anyhow!("No stored session. Run `logline auth login --email` first, then register a passkey.")
+    })?;
+
+    if load_passkey().is_none() {
+        anyhow::bail!("No passkey registered. Run `logline auth passkey-register` first.");
     }
+
+    // Touch ID gate (macOS)
+    if cfg!(target_os = "macos") {
+        eprintln!("Touch ID required to unlock session...");
+        let result = std::process::Command::new("swift")
+            .arg("-e")
+            .arg(r#"
+import LocalAuthentication
+import Foundation
+let ctx = LAContext()
+var err: NSError?
+guard ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &err) else {
+    fputs("biometrics unavailable: \(err?.localizedDescription ?? "unknown")\n", stderr)
+    exit(1)
+}
+let sema = DispatchSemaphore(value: 0)
+var ok = false
+ctx.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "Logline CLI authentication") { success, _ in
+    ok = success
+    sema.signal()
+}
+sema.wait()
+exit(ok ? 0 : 1)
+"#)
+            .output();
+
+        match result {
+            Ok(out) if out.status.success() => {}
+            Ok(_) => anyhow::bail!("Touch ID authentication failed or was cancelled."),
+            Err(e) => {
+                eprintln!("Touch ID unavailable ({e}), falling back to Enter confirmation.");
+                eprint!("Press Enter to confirm identity: ");
+                let mut buf = String::new();
+                std::io::stdin().read_line(&mut buf)?;
+            }
+        }
+    } else {
+        eprint!("Press Enter to confirm identity: ");
+        let mut buf = String::new();
+        std::io::stdin().read_line(&mut buf)?;
+    }
+
+    let resp = client.refresh_token(&auth.refresh_token)?;
+    let now = now_secs();
+
+    let stored = StoredAuth {
+        access_token: resp.access_token.clone(),
+        refresh_token: resp.refresh_token,
+        user_id: Some(resp.user.id.clone()),
+        email: resp.user.email.clone(),
+        expires_at: Some(now + resp.expires_in),
+        auth_method: Some("passkey".into()),
+    };
+    save_auth(&stored)?;
+
+    pout(json, serde_json::json!({
+        "ok": true,
+        "user_id": resp.user.id,
+        "email": resp.user.email,
+        "auth_method": "passkey",
+    }), &format!("Authenticated via passkey as {}", resp.user.email.as_deref().unwrap_or(&resp.user.id)))?;
+
+    Ok(())
 }
 
-fn now_unix_secs() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+fn cmd_passkey_register(client: &SupabaseClient, device_name: Option<String>, json: bool) -> anyhow::Result<()> {
+    let token = get_valid_token(client)?;
+    let user = client.get_user(&token)?;
+    let user_id = user["id"].as_str().ok_or_else(|| anyhow::anyhow!("Cannot determine user_id"))?;
+
+    use ed25519_dalek::SigningKey;
+    use rand::rngs::OsRng;
+
+    let signing_key = SigningKey::generate(&mut OsRng);
+    let public_key = signing_key.verifying_key();
+    let public_key_hex = hex::encode(public_key.as_bytes());
+    let private_key_hex = hex::encode(signing_key.to_bytes());
+
+    let device = device_name.unwrap_or_else(get_hostname);
+
+    let passkey_data = serde_json::json!({
+        "device_name": device,
+        "private_key": private_key_hex,
+        "public_key": public_key_hex,
+        "algorithm": "ed25519",
+    });
+
+    save_passkey(&passkey_data)?;
+
+    // Register public key in cli_passkey_credentials via PostgREST
+    let cred = serde_json::json!({
+        "user_id": user_id,
+        "device_name": device,
+        "public_key": public_key_hex,
+        "algorithm": "ed25519",
+        "status": "active",
+    });
+
+    client.postgrest_upsert("cli_passkey_credentials", &cred, "user_id,device_name", &token)?;
+
+    pout(json, serde_json::json!({
+        "ok": true,
+        "device_name": device,
+        "public_key": public_key_hex,
+    }), &format!("Passkey registered for device '{}'\nPublic key: {}", device, public_key_hex))?;
+
+    Ok(())
+}
+
+fn cmd_whoami(client: &SupabaseClient, json: bool) -> anyhow::Result<()> {
+    let token = get_valid_token(client)?;
+    let user = client.get_user(&token)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&user)?);
+    } else {
+        let id = user["id"].as_str().unwrap_or("?");
+        let email = user["email"].as_str().unwrap_or("?");
+        println!("User ID: {id}");
+        println!("Email:   {email}");
+    }
+
+    Ok(())
+}
+
+fn cmd_founder_bootstrap(
+    client: &SupabaseClient,
+    tenant_slug: &str,
+    tenant_name: &str,
+    json: bool,
+) -> anyhow::Result<()> {
+    let service_role_key = std::env::var("SUPABASE_SERVICE_ROLE_KEY")
+        .map_err(|_| anyhow::anyhow!(
+            "SUPABASE_SERVICE_ROLE_KEY env var required for bootstrap.\n\
+             This is a one-time operation. The service role key is never needed again."
+        ))?;
+
+    let token = get_valid_token(client)?;
+    let user = client.get_user(&token)?;
+    let user_id = user["id"].as_str().ok_or_else(|| anyhow::anyhow!("Cannot determine user_id from JWT"))?;
+    let email = user["email"].as_str().unwrap_or("");
+    let display_name = user["user_metadata"]["display_name"].as_str().unwrap_or(email);
+
+    eprintln!("Bootstrapping world as {email} ({user_id})...");
+
+    let tenant_id = tenant_slug.to_string();
+
+    // All inserts use service-role key to bypass RLS (nothing exists yet)
+    client.service_role_insert("users", &serde_json::json!({
+        "user_id": user_id,
+        "email": email,
+        "display_name": display_name,
+    }), &service_role_key)?;
+    eprintln!("  ✓ User record created");
+
+    client.service_role_insert("tenants", &serde_json::json!({
+        "tenant_id": tenant_id,
+        "slug": tenant_slug,
+        "name": tenant_name,
+    }), &service_role_key)?;
+    eprintln!("  ✓ Tenant '{tenant_slug}' created");
+
+    client.service_role_insert("tenant_memberships", &serde_json::json!({
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "role": "admin",
+    }), &service_role_key)?;
+    eprintln!("  ✓ Tenant membership (admin)");
+
+    client.service_role_insert("user_capabilities", &serde_json::json!({
+        "user_id": user_id,
+        "capability": "founder",
+        "granted_by": user_id,
+    }), &service_role_key)?;
+    eprintln!("  ✓ Founder capability granted");
+
+    client.service_role_insert("apps", &serde_json::json!({
+        "app_id": "ublx",
+        "tenant_id": tenant_id,
+        "name": "UBLX Headquarters",
+    }), &service_role_key)?;
+    eprintln!("  ✓ HQ app 'ublx' created");
+
+    client.service_role_insert("app_memberships", &serde_json::json!({
+        "app_id": "ublx",
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "role": "app_admin",
+    }), &service_role_key)?;
+    eprintln!("  ✓ App membership (app_admin)");
+
+    eprintln!();
+    eprintln!("WARNING: Consider rotating SUPABASE_SERVICE_ROLE_KEY in the");
+    eprintln!("  Supabase Dashboard -> Settings -> API -> Service Role Key.");
+    eprintln!("  The key used for bootstrap should not be reused.");
+
+    pout(json, serde_json::json!({
+        "ok": true,
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "app_id": "ublx",
+    }), &format!(
+        "\nBootstrap complete.\n\
+         Tenant: {tenant_slug} ({tenant_name})\n\
+         Founder: {email}\n\
+         HQ App: ublx\n\n\
+         Service role key is no longer needed. All operations now use JWT + RLS."
+    ))?;
+
+    Ok(())
+}
+
+fn cmd_app_create(client: &SupabaseClient, app_id: &str, name: &str, json: bool) -> anyhow::Result<()> {
+    let token = get_valid_token(client)?;
+    let user = client.get_user(&token)?;
+    let user_id = user["id"].as_str().ok_or_else(|| anyhow::anyhow!("Cannot determine user_id"))?;
+
+    // Get first tenant membership to determine tenant_id
+    let memberships = client.postgrest_get("tenant_memberships", &format!("select=tenant_id,role&user_id=eq.{user_id}&limit=1"), &token)?;
+    let tenant_id = memberships.as_array()
+        .and_then(|a| a.first())
+        .and_then(|m| m["tenant_id"].as_str())
+        .ok_or_else(|| anyhow::anyhow!("No tenant membership found. Run `logline founder bootstrap` first."))?;
+
+    client.postgrest_insert("apps", &serde_json::json!({
+        "app_id": app_id,
+        "tenant_id": tenant_id,
+        "name": name,
+    }), &token)?;
+
+    client.postgrest_insert("app_memberships", &serde_json::json!({
+        "app_id": app_id,
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "role": "app_admin",
+    }), &token)?;
+
+    pout(json, serde_json::json!({
+        "ok": true,
+        "app_id": app_id,
+        "tenant_id": tenant_id,
+    }), &format!("App '{name}' ({app_id}) created under tenant {tenant_id}"))?;
+
+    Ok(())
+}
+
+fn cmd_app_handshake(
+    client: &SupabaseClient,
+    app_id: &str,
+    service_url: &str,
+    api_key: Option<&str>,
+    capabilities: Option<&str>,
+    json: bool,
+) -> anyhow::Result<()> {
+    let token = get_valid_token(client)?;
+    let user = client.get_user(&token)?;
+    let user_id = user["id"].as_str().unwrap_or("?");
+
+    let memberships = client.postgrest_get("tenant_memberships", &format!("select=tenant_id&user_id=eq.{user_id}&limit=1"), &token)?;
+    let tenant_id = memberships.as_array()
+        .and_then(|a| a.first())
+        .and_then(|m| m["tenant_id"].as_str())
+        .ok_or_else(|| anyhow::anyhow!("No tenant membership found"))?;
+
+    let caps: Vec<String> = capabilities
+        .map(|c| c.split(',').map(|s| s.trim().to_string()).collect())
+        .unwrap_or_default();
+
+    let body = serde_json::json!({
+        "app_id": app_id,
+        "tenant_id": tenant_id,
+        "service_url": service_url,
+        "api_key_encrypted": api_key.unwrap_or(""),
+        "capabilities": caps,
+        "status": "active",
+        "onboarded_at": chrono_now(),
+        "onboarded_by": user_id,
+    });
+
+    client.postgrest_upsert("app_service_config", &body, "app_id,tenant_id", &token)?;
+
+    pout(json, serde_json::json!({
+        "ok": true,
+        "app_id": app_id,
+        "service_url": service_url,
+        "capabilities": caps,
+    }), &format!("Handshake complete for '{app_id}'.\nHQ can now reach {service_url}"))?;
+
+    Ok(())
+}
+
+fn cmd_app_config_export(client: &SupabaseClient, app_id: &str, json: bool) -> anyhow::Result<()> {
+    let token = get_valid_token(client)?;
+    let user = client.get_user(&token)?;
+    let user_id = user["id"].as_str().unwrap_or("?");
+
+    let memberships = client.postgrest_get("tenant_memberships", &format!("select=tenant_id&user_id=eq.{user_id}&limit=1"), &token)?;
+    let tenant_id = memberships.as_array()
+        .and_then(|a| a.first())
+        .and_then(|m| m["tenant_id"].as_str())
+        .unwrap_or("?");
+
+    let config = serde_json::json!({
+        "supabase_url": client.config.url,
+        "supabase_anon_key": client.config.anon_key,
+        "app_id": app_id,
+        "tenant_id": tenant_id,
+    });
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&config)?);
+    } else {
+        println!("Ecosystem config for '{app_id}':\n");
+        println!("{}", serde_json::to_string_pretty(&config)?);
+        println!("\nPaste this into the app's configuration.");
+    }
+
+    Ok(())
+}
+
+fn cmd_app_list(client: &SupabaseClient, json: bool) -> anyhow::Result<()> {
+    let token = get_valid_token(client)?;
+    let apps = client.postgrest_get("apps", "select=app_id,tenant_id,name,created_at", &token)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&apps)?);
+    } else if let Some(arr) = apps.as_array() {
+        if arr.is_empty() {
+            println!("No apps found.");
+        } else {
+            for app in arr {
+                println!("  {} — {} (tenant: {})",
+                    app["app_id"].as_str().unwrap_or("?"),
+                    app["name"].as_str().unwrap_or("?"),
+                    app["tenant_id"].as_str().unwrap_or("?"),
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn cmd_tenant_create(client: &SupabaseClient, slug: &str, name: &str, json: bool) -> anyhow::Result<()> {
+    let token = get_valid_token(client)?;
+
+    client.postgrest_insert("tenants", &serde_json::json!({
+        "tenant_id": slug,
+        "slug": slug,
+        "name": name,
+    }), &token)?;
+
+    pout(json, serde_json::json!({
+        "ok": true,
+        "tenant_id": slug,
+        "slug": slug,
+        "name": name,
+    }), &format!("Tenant '{name}' ({slug}) created"))?;
+
+    Ok(())
+}
+
+fn cmd_tenant_allowlist_add(
+    client: &SupabaseClient,
+    email: &str,
+    role: &str,
+    app_defaults: Option<&str>,
+    json: bool,
+) -> anyhow::Result<()> {
+    let token = get_valid_token(client)?;
+    let user = client.get_user(&token)?;
+    let user_id = user["id"].as_str().unwrap_or("?");
+
+    let memberships = client.postgrest_get("tenant_memberships", &format!("select=tenant_id&user_id=eq.{user_id}&limit=1"), &token)?;
+    let tenant_id = memberships.as_array()
+        .and_then(|a| a.first())
+        .and_then(|m| m["tenant_id"].as_str())
+        .ok_or_else(|| anyhow::anyhow!("No tenant membership found"))?;
+
+    let defaults: Vec<serde_json::Value> = app_defaults
+        .map(|ad| {
+            ad.split(',')
+                .filter_map(|pair| {
+                    let mut parts = pair.trim().splitn(2, ':');
+                    let app = parts.next()?;
+                    let r = parts.next().unwrap_or("member");
+                    Some(serde_json::json!({"app_id": app, "role": r}))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let email_norm = email.trim().to_lowercase();
+
+    client.postgrest_upsert("tenant_email_allowlist", &serde_json::json!({
+        "tenant_id": tenant_id,
+        "email_normalized": email_norm,
+        "role_default": role,
+        "app_defaults": defaults,
+    }), "tenant_id,email_normalized", &token)?;
+
+    pout(json, serde_json::json!({
+        "ok": true,
+        "email": email_norm,
+        "tenant_id": tenant_id,
+        "role": role,
+        "app_defaults": defaults,
+    }), &format!("Added {email_norm} to allowlist (role: {role})"))?;
+
+    Ok(())
+}
+
+fn cmd_tenant_resolve(client: &SupabaseClient, slug: &str, json: bool) -> anyhow::Result<()> {
+    let token = get_valid_token(client)?;
+    let tenants = client.postgrest_get("tenants", &format!("select=tenant_id,slug,name,created_at&slug=eq.{slug}"), &token)?;
+
+    let tenant = tenants.as_array()
+        .and_then(|a| a.first())
+        .ok_or_else(|| anyhow::anyhow!("Tenant with slug '{slug}' not found"))?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(tenant)?);
+    } else {
+        println!("Tenant: {} ({})", tenant["name"].as_str().unwrap_or("?"), tenant["tenant_id"].as_str().unwrap_or("?"));
+    }
+
+    Ok(())
+}
+
+fn cmd_fuel_emit(
+    client: &SupabaseClient,
+    app_id: &str,
+    units: f64,
+    unit_type: &str,
+    source: &str,
+    idempotency_key: Option<&str>,
+    json: bool,
+) -> anyhow::Result<()> {
+    let token = get_valid_token(client)?;
+    let user = client.get_user(&token)?;
+    let user_id = user["id"].as_str().ok_or_else(|| anyhow::anyhow!("Cannot determine user_id"))?;
+
+    let memberships = client.postgrest_get("tenant_memberships", &format!("select=tenant_id&user_id=eq.{user_id}&limit=1"), &token)?;
+    let tenant_id = memberships.as_array()
+        .and_then(|a| a.first())
+        .and_then(|m| m["tenant_id"].as_str())
+        .ok_or_else(|| anyhow::anyhow!("No tenant membership found"))?;
+
+    let idem_key = idempotency_key
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("{}-{}-{}-{}", app_id, user_id, unit_type, now_secs()));
+
+    client.postgrest_insert("fuel_events", &serde_json::json!({
+        "idempotency_key": idem_key,
+        "tenant_id": tenant_id,
+        "app_id": app_id,
+        "user_id": user_id,
+        "units": units,
+        "unit_type": unit_type,
+        "source": source,
+    }), &token)?;
+
+    pout(json, serde_json::json!({
+        "ok": true,
+        "idempotency_key": idem_key,
+        "app_id": app_id,
+        "units": units,
+        "unit_type": unit_type,
+    }), &format!("Fuel event emitted: {units} {unit_type} for {app_id}"))?;
+
+    Ok(())
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Ready (pre-flight)
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn cmd_ready(pipeline: &str, json: bool) -> anyhow::Result<()> {
+    use commands::auth_session;
+
+    let mut issues: Vec<String> = Vec::new();
+
+    // 1. Session
+    let session_ok = auth_session::load_session()
+        .is_some_and(|s| {
+            s.expires_at > std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+        });
+    if !session_ok {
+        issues.push("Session locked. Fix: logline auth unlock".into());
+    }
+
+    // 2. Auth identity
+    let identity = auth_session::load_identity();
+    let logged_in = identity.is_some();
+    let passkey_ok = identity.as_ref().is_some_and(|i| i.auth_method == "passkey");
+    let founder_blocked = identity.as_ref().is_some_and(|i| i.is_founder);
+
+    if !logged_in {
+        issues.push("Not logged in. Fix: logline auth login --passkey".into());
+    } else if !passkey_ok {
+        issues.push(format!(
+            "Auth method is '{}', must be 'passkey'. Fix: logline auth login --passkey",
+            identity.as_ref().map(|i| i.auth_method.as_str()).unwrap_or("?")
+        ));
+    }
+    if founder_blocked {
+        issues.push("Founder/god mode blocked for infra. Fix: use operator/service account.".into());
+    }
+
+    // 3. Pipeline exists
+    let pipeline_file = std::env::current_dir()
         .unwrap_or_default()
-        .as_secs()
+        .join("logline.cicd.json");
+    let pipeline_exists = if pipeline_file.exists() {
+        let content = std::fs::read_to_string(&pipeline_file).unwrap_or_default();
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&content);
+        parsed
+            .ok()
+            .and_then(|v| v["pipelines"][pipeline].as_array().map(|a| !a.is_empty()))
+            .unwrap_or(false)
+    } else {
+        false
+    };
+    if !pipeline_exists {
+        issues.push(format!("Pipeline '{pipeline}' not found in logline.cicd.json"));
+    }
+
+    // 4. Key secrets
+    let required_keys = ["database_url", "github_token", "vercel_token", "vercel_org_id", "vercel_project_id"];
+    let mut missing_keys: Vec<&str> = Vec::new();
+    for key in &required_keys {
+        if secrets::load_credential(key).is_none() {
+            missing_keys.push(key);
+        }
+    }
+    if !missing_keys.is_empty() {
+        issues.push(format!(
+            "Missing secrets: {}. Fix: logline secrets set <key>",
+            missing_keys.join(", ")
+        ));
+    }
+
+    let ready = issues.is_empty();
+
+    let report = serde_json::json!({
+        "ready": ready,
+        "pipeline": pipeline,
+        "session_active": session_ok,
+        "logged_in": logged_in,
+        "passkey_ok": passkey_ok,
+        "founder_blocked": founder_blocked,
+        "pipeline_exists": pipeline_exists,
+        "missing_secrets": missing_keys,
+        "issues": issues,
+    });
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(());
+    }
+
+    println!("Pre-flight: {pipeline}\n");
+
+    let items: &[(&str, bool)] = &[
+        ("session", session_ok),
+        ("logged_in", logged_in),
+        ("passkey", passkey_ok),
+        ("non-founder", !founder_blocked),
+        ("pipeline", pipeline_exists),
+        ("secrets", missing_keys.is_empty()),
+    ];
+
+    for (name, ok) in items {
+        let mark = if *ok { "✓" } else { "✗" };
+        println!("  {mark} {name}");
+    }
+
+    println!();
+    if ready {
+        println!("Ready. Run: logline cicd run --pipeline {pipeline}");
+    } else {
+        for issue in &issues {
+            println!("  ✗ {issue}");
+        }
+    }
+
+    Ok(())
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════════════════════
 
 fn get_hostname() -> String {
-    // Try $HOSTNAME env var first (works on most Unix shells).
     if let Ok(h) = std::env::var("HOSTNAME") {
         if !h.is_empty() {
             return h;
         }
     }
-    // Fall back to reading /etc/hostname on Linux / uname on macOS.
     if let Ok(h) = fs::read_to_string("/etc/hostname") {
         let trimmed = h.trim().to_string();
         if !trimmed.is_empty() {
@@ -318,703 +1175,78 @@ fn get_hostname() -> String {
     "logline-cli".to_string()
 }
 
-fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-    let config_dir = cli.config_dir.clone().unwrap_or_else(default_config_dir);
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
 
-    let catalog = match load_catalog_from_dir(&config_dir) {
-        Ok(c) => c,
-        Err(_) => demo_catalog(),
-    };
-    let runtime = LoglineRuntime::from_catalog(catalog.clone())?;
+fn chrono_now() -> String {
+    let secs = now_secs();
+    format!("1970-01-01T00:00:00Z")
+        .replace("1970-01-01T00:00:00Z", &format_timestamp(secs))
+}
 
-    match cli.command {
-        Commands::Init { force } => {
-            if force && config_dir.exists() {
-                for name in ["connections.toml", "runtime.toml", "ui.toml"] {
-                    let p = config_dir.join(name);
-                    if p.exists() {
-                        std::fs::remove_file(&p)?;
-                    }
-                }
-            }
-            write_default_config_files(&config_dir)?;
-            print_json_or_text(
-                cli.json,
-                serde_json::json!({"message":"init complete","config_dir":config_dir}),
-                "Init complete",
-            )?;
-        }
-        Commands::Status => {
-            let status = runtime.status()?;
-            print_json_or_text(
-                cli.json,
-                serde_json::to_value(status)?,
-                "Runtime status retrieved",
-            )?;
-        }
-        Commands::Run { intent, args } => {
-            let payload = BTreeMap::from_iter(args);
-            let result = runtime.run_intent(Intent {
-                intent_type: intent,
-                payload,
-            })?;
-            print_json_or_text(cli.json, serde_json::to_value(result)?, "Intent accepted")?;
-        }
-        Commands::Stop { run_id } => {
-            runtime.stop_run(run_id.clone())?;
-            print_json_or_text(
-                cli.json,
-                serde_json::json!({"ok":true,"run_id":run_id}),
-                "Stop signal sent",
-            )?;
-        }
-        Commands::Events { since } => {
-            let events = runtime.events_since(since)?;
-            print_json_or_text(cli.json, serde_json::to_value(events)?, "Events fetched")?;
-        }
-        Commands::Profile { command } => match command {
-            ProfileCommands::List => {
-                let profiles: Vec<_> = catalog.profiles.keys().cloned().collect();
-                print_json_or_text(cli.json, serde_json::to_value(profiles)?, "Profiles listed")?;
-            }
-            ProfileCommands::Use { profile_id } => {
-                runtime.select_profile(profile_id.clone())?;
-                print_json_or_text(
-                    cli.json,
-                    serde_json::json!({"ok":true,"active_profile":profile_id}),
-                    "Profile selected",
-                )?;
-            }
-        },
-        Commands::Backend { command } => match command {
-            BackendCommands::List => {
-                let backends: Vec<_> = catalog.backends.keys().cloned().collect();
-                print_json_or_text(cli.json, serde_json::to_value(backends)?, "Backends listed")?;
-            }
-            BackendCommands::Test { backend_id } => {
-                runtime.test_backend(backend_id.clone())?;
-                print_json_or_text(
-                    cli.json,
-                    serde_json::json!({"ok":true,"backend_id":backend_id}),
-                    "Backend health check passed",
-                )?;
-            }
-        },
-        Commands::Auth { command } => match command {
-            AuthCommands::Whoami { daemon_url, token } => {
-                let daemon_url = resolve_daemon_url(daemon_url);
-                let token = resolve_token(token)?;
+fn format_timestamp(secs: u64) -> String {
+    let days = secs / 86400;
+    let rem = secs % 86400;
+    let hours = rem / 3600;
+    let minutes = (rem % 3600) / 60;
+    let seconds = rem % 60;
 
-                let client = build_client()?;
-                let response = send_v1_json_request(
-                    &client,
-                    "GET",
-                    &daemon_url,
-                    "auth/whoami",
-                    Some(&token),
-                    None,
-                )?;
+    let (year, month, day) = days_to_ymd(days);
+    format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
+}
 
-                if response.status().is_success() {
-                    let value: serde_json::Value = response.json()?;
-                    print_json_or_text(cli.json, value, "Identity resolved")?;
-                } else {
-                    let (status, msg) = response_error(response);
-                    anyhow::bail!("whoami failed ({status}): {msg}");
-                }
-            }
-
-            AuthCommands::Login {
-                daemon_url,
-                qr,
-                device_name,
-            } => {
-                let daemon_url = resolve_daemon_url(daemon_url);
-
-                if !qr {
-                    anyhow::bail!(
-                        "Only --qr login is currently supported.\n\
-                         Run: logline auth login --qr"
-                    );
-                }
-
-                println!("Starting QR login flow...");
-                println!("Daemon: {daemon_url}");
-
-                let client = build_client()?;
-
-                // 1. Create challenge.
-                let challenge_url =
-                    format!("{}/v1/cli/auth/challenge", daemon_url.trim_end_matches('/'));
-                let device = device_name.unwrap_or_else(get_hostname);
-                let body = serde_json::json!({ "device_name": device });
-
-                let resp = client.post(&challenge_url).json(&body).send()?;
-                if !resp.status().is_success() {
-                    let status = resp.status();
-                    anyhow::bail!("Failed to create auth challenge ({status})");
-                }
-
-                let challenge: ChallengeResponse = resp.json()?;
-
-                println!("\nScan the QR code below with your authenticated mobile or web session:");
-                render_qr_terminal(&challenge.challenge_url);
-                println!("URL: {}", challenge.challenge_url);
-                println!("Challenge ID: {}", challenge.challenge_id);
-                println!("Expires: {}", challenge.expires_at);
-                println!("\nWaiting for approval (Ctrl-C to cancel)...");
-
-                // 2. Poll for approval.
-                let status_url = format!(
-                    "{}/v1/cli/auth/challenge/{}/status",
-                    daemon_url.trim_end_matches('/'),
-                    challenge.challenge_id
-                );
-
-                let token = poll_challenge_status(&client, &status_url)?;
-
-                // 3. Fetch whoami to enrich stored credentials.
-                let whoami_url = format!("{}/v1/auth/whoami", daemon_url.trim_end_matches('/'));
-                let whoami_resp = client
-                    .get(&whoami_url)
-                    .header("authorization", format!("Bearer {token}"))
-                    .send();
-
-                let (user_id, email) = if let Ok(r) = whoami_resp {
-                    if r.status().is_success() {
-                        if let Ok(w) = r.json::<WhoamiResponse>() {
-                            (Some(w.user_id), w.email)
-                        } else {
-                            (None, None)
-                        }
-                    } else {
-                        (None, None)
-                    }
-                } else {
-                    (None, None)
-                };
-
-                // 4. Save token.
-                let stored = StoredAuth {
-                    token: token.clone(),
-                    daemon_url: daemon_url.clone(),
-                    user_id: user_id.clone(),
-                    email: email.clone(),
-                    saved_at: now_unix_secs(),
-                };
-                save_stored_auth(&stored)?;
-
-                println!("\nLogin successful!");
-                if let Some(uid) = &user_id {
-                    println!("User: {uid}");
-                }
-                if let Some(em) = &email {
-                    println!("Email: {em}");
-                }
-                println!("Token saved to: {}", auth_token_path().display());
-
-                print_json_or_text(
-                    cli.json,
-                    serde_json::json!({
-                        "ok": true,
-                        "user_id": user_id,
-                        "email": email,
-                        "daemon_url": daemon_url,
-                        "token_path": auth_token_path().to_string_lossy()
-                    }),
-                    "Login complete",
-                )?;
-            }
-
-            AuthCommands::TenantResolve { daemon_url, slug } => {
-                let daemon_url = resolve_daemon_url(daemon_url);
-                let client = build_client()?;
-                let body = serde_json::json!({ "slug": slug });
-                let response = send_v1_json_request(
-                    &client,
-                    "POST",
-                    &daemon_url,
-                    "auth/tenant/resolve",
-                    None,
-                    Some(&body),
-                )?;
-
-                if response.status().is_success() {
-                    let value: serde_json::Value = response.json()?;
-                    print_json_or_text(cli.json, value, "Tenant resolved")?;
-                } else {
-                    let (status, msg) = response_error(response);
-                    anyhow::bail!("tenant resolve failed ({status}): {msg}");
-                }
-            }
-
-            AuthCommands::OnboardClaim {
-                daemon_url,
-                token,
-                tenant_slug,
-                display_name,
-            } => {
-                let daemon_url = resolve_daemon_url(daemon_url);
-                let token = resolve_token(token)?;
-                let client = build_client()?;
-                let mut body = serde_json::json!({
-                    "tenant_slug": tenant_slug,
-                });
-                if let Some(name) = display_name {
-                    body["display_name"] = serde_json::Value::String(name);
-                }
-
-                let response = send_v1_json_request(
-                    &client,
-                    "POST",
-                    &daemon_url,
-                    "auth/onboard/claim",
-                    Some(&token),
-                    Some(&body),
-                )?;
-
-                if response.status().is_success() {
-                    let value: serde_json::Value = response.json()?;
-                    print_json_or_text(cli.json, value, "Onboarding claim succeeded")?;
-                } else {
-                    let (status, msg) = response_error(response);
-                    anyhow::bail!("onboard claim failed ({status}): {msg}");
-                }
-            }
-
-            AuthCommands::OnboardFounder {
-                daemon_url,
-                token,
-                tenant_slug,
-                display_name,
-                public_key,
-                algorithm,
-            } => {
-                let daemon_url = resolve_daemon_url(daemon_url);
-                let token = resolve_token(token)?;
-                let client = build_client()?;
-
-                let mut claim_body = serde_json::json!({
-                    "tenant_slug": tenant_slug,
-                });
-                if let Some(name) = display_name {
-                    claim_body["display_name"] = serde_json::Value::String(name);
-                }
-
-                let claim_resp = send_v1_json_request(
-                    &client,
-                    "POST",
-                    &daemon_url,
-                    "auth/onboard/claim",
-                    Some(&token),
-                    Some(&claim_body),
-                )?;
-                if !claim_resp.status().is_success() {
-                    let (status, msg) = response_error(claim_resp);
-                    anyhow::bail!("onboard claim failed ({status}): {msg}");
-                }
-                let claim_value: serde_json::Value = claim_resp.json()?;
-
-                let whoami_resp = send_v1_json_request(
-                    &client,
-                    "GET",
-                    &daemon_url,
-                    "auth/whoami",
-                    Some(&token),
-                    None,
-                )?;
-                if !whoami_resp.status().is_success() {
-                    let (status, msg) = response_error(whoami_resp);
-                    anyhow::bail!("whoami after onboard failed ({status}): {msg}");
-                }
-                let whoami_value: serde_json::Value = whoami_resp.json()?;
-
-                let founder_enabled = whoami_value
-                    .get("capabilities")
-                    .and_then(|v| v.as_array())
-                    .is_some_and(|caps| caps.iter().any(|c| c.as_str() == Some("founder")));
-
-                if !founder_enabled {
-                    anyhow::bail!(
-                        "onboarding succeeded but founder capability is missing; \
-                         grant capability first, then rerun `logline auth onboard-founder`"
-                    );
-                }
-
-                let key_register_value = if let Some(key) = public_key {
-                    let key_body = serde_json::json!({
-                        "public_key": key,
-                        "algorithm": algorithm,
-                    });
-                    let key_resp = send_v1_json_request(
-                        &client,
-                        "POST",
-                        &daemon_url,
-                        "founder/keys/register",
-                        Some(&token),
-                        Some(&key_body),
-                    )?;
-                    if !key_resp.status().is_success() {
-                        let (status, msg) = response_error(key_resp);
-                        anyhow::bail!("founder key register failed ({status}): {msg}");
-                    }
-                    Some(key_resp.json::<serde_json::Value>()?)
-                } else {
-                    None
-                };
-
-                print_json_or_text(
-                    cli.json,
-                    serde_json::json!({
-                        "ok": true,
-                        "claim": claim_value,
-                        "whoami": whoami_value,
-                        "founder_key_register": key_register_value,
-                    }),
-                    "Founder onboarding complete",
-                )?;
-            }
-
-            AuthCommands::Status { daemon_url } => {
-                let stored = load_stored_auth();
-                match stored {
-                    None => {
-                        if !cli.json {
-                            println!("Not logged in. Run: logline auth login --qr");
-                        }
-                        print_json_or_text(
-                            cli.json,
-                            serde_json::json!({"logged_in": false}),
-                            "Not logged in",
-                        )?;
-                    }
-                    Some(auth) => {
-                        let url = daemon_url.unwrap_or_else(|| auth.daemon_url.clone());
-                        let client = build_client()?;
-                        let valid = send_v1_json_request(
-                            &client,
-                            "GET",
-                            &url,
-                            "auth/whoami",
-                            Some(&auth.token),
-                            None,
-                        )
-                        .map(|r| r.status().is_success())
-                        .unwrap_or(false);
-
-                        print_json_or_text(
-                            cli.json,
-                            serde_json::json!({
-                                "logged_in": true,
-                                "token_valid": valid,
-                                "user_id": auth.user_id,
-                                "email": auth.email,
-                                "daemon_url": auth.daemon_url,
-                                "saved_at": auth.saved_at,
-                                "token_path": auth_token_path().to_string_lossy()
-                            }),
-                            &format!(
-                                "Logged in as {} (token {})",
-                                auth.user_id.as_deref().unwrap_or("unknown"),
-                                if valid { "valid" } else { "expired/invalid" }
-                            ),
-                        )?;
-                    }
-                }
-            }
-
-            AuthCommands::Logout => {
-                delete_stored_auth()?;
-                print_json_or_text(
-                    cli.json,
-                    serde_json::json!({"ok": true}),
-                    "Logged out. Token removed.",
-                )?;
-            }
-        },
-
-        Commands::Supabase { command } => match command {
-            SupabaseCommands::Check { workdir } => {
-                let version = run_supabase_capture(&["--version"], workdir.as_ref())?;
-                if !version.ok {
-                    anyhow::bail!(
-                        "supabase CLI check failed: {}",
-                        pick_non_empty(&version.stderr, &version.stdout)
-                    );
-                }
-
-                let projects = run_supabase_capture(&["projects", "list"], workdir.as_ref())?;
-                let migrations =
-                    run_supabase_capture(&["migration", "list", "--linked"], workdir.as_ref())?;
-
-                let value = serde_json::json!({
-                    "version": version.stdout.trim(),
-                    "projects": {
-                        "ok": projects.ok,
-                        "code": projects.code,
-                        "stdout": projects.stdout.trim(),
-                        "stderr": projects.stderr.trim()
-                    },
-                    "linked_migrations": {
-                        "ok": migrations.ok,
-                        "code": migrations.code,
-                        "stdout": migrations.stdout.trim(),
-                        "stderr": migrations.stderr.trim()
-                    },
-                    "hints": [
-                        "If projects fail: run `supabase login`.",
-                        "If linked migrations fail: run `supabase link --project-ref <ref>`."
-                    ]
-                });
-
-                if cli.json {
-                    println!("{}", serde_json::to_string_pretty(&value)?);
-                } else {
-                    println!("Supabase CLI: {}", version.stdout.trim());
-                    println!(
-                        "Projects: {}",
-                        if projects.ok {
-                            "ok"
-                        } else {
-                            "needs login (run supabase login)"
-                        }
-                    );
-                    println!(
-                        "Linked migrations: {}",
-                        if migrations.ok {
-                            "ok"
-                        } else {
-                            "not linked (run supabase link --project-ref <ref>)"
-                        }
-                    );
-                    if !projects.ok {
-                        println!(
-                            "projects detail: {}",
-                            pick_non_empty(&projects.stderr, &projects.stdout)
-                        );
-                    }
-                    if !migrations.ok {
-                        println!(
-                            "migrations detail: {}",
-                            pick_non_empty(&migrations.stderr, &migrations.stdout)
-                        );
-                    }
-                }
-            }
-            SupabaseCommands::Projects { workdir } => {
-                run_supabase_stream(&["projects", "list"], workdir.as_ref())?;
-            }
-            SupabaseCommands::Link {
-                project_ref,
-                workdir,
-            } => {
-                run_supabase_stream(
-                    &["link", "--project-ref", project_ref.as_str()],
-                    workdir.as_ref(),
-                )?;
-            }
-            SupabaseCommands::Migrate { workdir } => {
-                run_supabase_stream(&["db", "push", "--linked"], workdir.as_ref())?;
-            }
-            SupabaseCommands::Raw { workdir, args } => {
-                if args.is_empty() {
-                    anyhow::bail!(
-                        "supabase raw requires arguments, e.g. `logline supabase raw projects list`"
-                    );
-                }
-                let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
-                run_supabase_stream(&borrowed, workdir.as_ref())?;
-            }
-        },
+pub fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
+    let mut year = 1970;
+    loop {
+        let days_in_year = if is_leap(year) { 366 } else { 365 };
+        if days < days_in_year { break; }
+        days -= days_in_year;
+        year += 1;
     }
+    let leap = is_leap(year);
+    let months: [u64; 12] = [31, if leap {29} else {28}, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let mut month = 0;
+    for m in months {
+        if days < m { break; }
+        days -= m;
+        month += 1;
+    }
+    (year, month + 1, days + 1)
+}
 
+fn is_leap(y: u64) -> bool {
+    y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)
+}
+
+fn parse_key_val(s: &str) -> Result<(String, String), String> {
+    let pos = s.find('=').ok_or_else(|| "must be KEY=VALUE".to_string())?;
+    Ok((s[..pos].to_string(), s[pos + 1..].to_string()))
+}
+
+/// Gate: require an active unlocked session. Used by command modules.
+pub fn require_unlocked() -> anyhow::Result<commands::auth_session::SessionToken> {
+    commands::auth_session::require_unlocked()
+}
+
+/// Uber-gate: session + passkey + non-founder. Used by deploy/cicd/db commands.
+pub fn require_infra_identity() -> anyhow::Result<(commands::auth_session::SessionToken, commands::auth_session::AuthIdentity)> {
+    commands::auth_session::require_infra_identity()
+}
+
+pub fn pout(json_mode: bool, value: serde_json::Value, text: &str) -> anyhow::Result<()> {
+    if json_mode {
+        println!("{}", serde_json::to_string_pretty(&value)?);
+    } else {
+        println!("{text}");
+    }
     Ok(())
 }
 
-// ─── Auth helpers ─────────────────────────────────────────────────────────────
-
-fn resolve_v1_urls(base_url: &str, path: &str) -> Vec<String> {
-    let base = base_url.trim_end_matches('/');
-    let route = path.trim_start_matches('/');
-
-    if base.ends_with("/api") {
-        return vec![format!("{base}/v1/{route}")];
-    }
-
-    vec![
-        format!("{base}/api/v1/{route}"),
-        format!("{base}/v1/{route}"),
-    ]
-}
-
-fn send_v1_json_request(
-    client: &reqwest::blocking::Client,
-    method: &str,
-    base_url: &str,
-    path: &str,
-    bearer_token: Option<&str>,
-    body: Option<&serde_json::Value>,
-) -> anyhow::Result<reqwest::blocking::Response> {
-    let urls = resolve_v1_urls(base_url, path);
-    let mut last_error = String::new();
-
-    for url in urls {
-        let mut request = match method {
-            "GET" => client.get(&url),
-            "POST" => client.post(&url),
-            other => anyhow::bail!("unsupported HTTP method: {other}"),
-        };
-
-        if let Some(token) = bearer_token {
-            request = request.header("authorization", format!("Bearer {token}"));
-            request = request.header("x-logline-token", token);
-        }
-
-        if let Some(json_body) = body {
-            request = request.json(json_body);
-        }
-
-        match request.send() {
-            Ok(resp) if resp.status() != reqwest::StatusCode::NOT_FOUND => return Ok(resp),
-            Ok(resp) => {
-                last_error = format!("{url} -> {}", resp.status());
-                continue;
-            }
-            Err(err) => {
-                last_error = format!("{url} -> {err}");
-                continue;
-            }
-        }
-    }
-
-    anyhow::bail!("request failed for path `{path}`: {last_error}")
-}
-
-fn response_error(response: reqwest::blocking::Response) -> (reqwest::StatusCode, String) {
-    let status = response.status();
-    let text = response.text().unwrap_or_default();
-    if text.trim().is_empty() {
-        return (status, "request failed".to_string());
-    }
-
-    if let Ok(err) = serde_json::from_str::<DaemonError>(&text) {
-        return (status, err.error);
-    }
-
-    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
-        if let Some(msg) = value.get("error").and_then(|v| v.as_str()) {
-            return (status, msg.to_string());
-        }
-    }
-
-    (status, text)
-}
-
-fn resolve_daemon_url(override_url: Option<String>) -> String {
-    override_url
-        .or_else(|| std::env::var("LOGLINE_DAEMON_URL").ok())
-        .unwrap_or_else(|| "http://127.0.0.1:7600".to_string())
-}
-
-fn resolve_token(override_token: Option<String>) -> anyhow::Result<String> {
-    if let Some(t) = override_token {
-        return Ok(t);
-    }
-    if let Ok(t) = std::env::var("LOGLINE_DAEMON_TOKEN") {
-        if !t.trim().is_empty() {
-            return Ok(t.trim().to_string());
-        }
-    }
-    if let Some(stored) = load_stored_auth() {
-        return Ok(stored.token);
-    }
-    anyhow::bail!(
-        "No auth token found.\n\
-         Run `logline auth login --qr` or set LOGLINE_DAEMON_TOKEN env var."
-    )
-}
-
-fn build_client() -> anyhow::Result<reqwest::blocking::Client> {
-    Ok(reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()?)
-}
-
-fn poll_challenge_status(
-    client: &reqwest::blocking::Client,
-    status_url: &str,
-) -> anyhow::Result<String> {
-    // Poll for up to 5 minutes (100 attempts × 3 s = 300 s).
-    for i in 0..100_u32 {
-        if i > 0 {
-            thread::sleep(Duration::from_secs(3));
-        }
-
-        let resp = client.get(status_url).send()?;
-        if !resp.status().is_success() {
-            anyhow::bail!("Challenge status check failed: {}", resp.status());
-        }
-
-        let cs: ChallengeStatus = resp.json()?;
-
-        match cs.status.as_str() {
-            "approved" => {
-                let token = cs.session_token.ok_or_else(|| {
-                    anyhow::anyhow!("Challenge approved but no session token in response")
-                })?;
-                println!("\nChallenge approved!");
-                return Ok(token);
-            }
-            "denied" => {
-                anyhow::bail!("Challenge was denied by the approving user.");
-            }
-            "expired" => {
-                anyhow::bail!("Challenge expired. Run `logline auth login --qr` again.");
-            }
-            "pending" => {
-                eprint!(".");
-                let _ = std::io::Write::flush(&mut std::io::stderr());
-            }
-            other => {
-                anyhow::bail!("Unexpected challenge status: {other}");
-            }
-        }
-    }
-
-    anyhow::bail!("Timeout waiting for QR approval. Run `logline auth login --qr` again.")
-}
-
-// ─── Supabase helpers ─────────────────────────────────────────────────────────
-
-#[derive(Debug)]
-struct CmdResult {
-    ok: bool,
-    code: i32,
-    stdout: String,
-    stderr: String,
-}
-
-fn run_supabase_capture(args: &[&str], workdir: Option<&PathBuf>) -> anyhow::Result<CmdResult> {
-    let mut cmd = Command::new("supabase");
-    if let Some(wd) = workdir {
-        cmd.arg("--workdir").arg(wd);
-    }
-    apply_supabase_env(&mut cmd, workdir);
-    cmd.args(args);
-
-    let output = cmd.output().map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            anyhow::anyhow!(
-                "supabase CLI not found. Install with `brew install supabase/tap/supabase`"
-            )
-        } else {
-            anyhow::anyhow!(e)
-        }
-    })?;
-
-    Ok(to_cmd_result(output))
-}
+// ─── Supabase CLI helpers ───────────────────────────────────────────────────
 
 fn run_supabase_stream(args: &[&str], workdir: Option<&PathBuf>) -> anyhow::Result<()> {
     let mut cmd = Command::new("supabase");
@@ -1029,9 +1261,7 @@ fn run_supabase_stream(args: &[&str], workdir: Option<&PathBuf>) -> anyhow::Resu
 
     let status = cmd.status().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
-            anyhow::anyhow!(
-                "supabase CLI not found. Install with `brew install supabase/tap/supabase`"
-            )
+            anyhow::anyhow!("supabase CLI not found. Install with `brew install supabase/tap/supabase`")
         } else {
             anyhow::anyhow!(e)
         }
@@ -1044,99 +1274,22 @@ fn run_supabase_stream(args: &[&str], workdir: Option<&PathBuf>) -> anyhow::Resu
     }
 }
 
-fn to_cmd_result(output: Output) -> CmdResult {
-    CmdResult {
-        ok: output.status.success(),
-        code: output.status.code().unwrap_or(-1),
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-    }
-}
-
-fn pick_non_empty(primary: &str, fallback: &str) -> String {
-    if !primary.trim().is_empty() {
-        primary.trim().to_string()
-    } else {
-        fallback.trim().to_string()
-    }
-}
-
-fn apply_supabase_env(cmd: &mut Command, workdir: Option<&PathBuf>) {
+fn apply_supabase_env(cmd: &mut Command, _workdir: Option<&PathBuf>) {
     let has_access = std::env::var("SUPABASE_ACCESS_TOKEN")
         .ok()
         .is_some_and(|v| !v.trim().is_empty());
-    let has_account = std::env::var("SUPABASE_ACCOUNT_TOKEN")
-        .ok()
-        .is_some_and(|v| !v.trim().is_empty());
-    if has_access || has_account {
+    if has_access {
         return;
     }
 
-    let token = find_supabase_token_from_env_files(workdir);
-    if let Some(token) = token {
-        cmd.env("SUPABASE_ACCESS_TOKEN", token);
-    }
-}
-
-fn find_supabase_token_from_env_files(workdir: Option<&PathBuf>) -> Option<String> {
-    let base = workdir
-        .cloned()
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-
-    for filename in [".env.local", ".env"] {
-        let path = base.join(filename);
-        let Ok(content) = fs::read_to_string(path) else {
-            continue;
-        };
-        if let Some(token) = parse_env_value(&content, "SUPABASE_ACCESS_TOKEN")
-            .or_else(|| parse_env_value(&content, "SUPABASE_ACCOUNT_TOKEN"))
-        {
-            return Some(token);
-        };
-    }
-
-    None
-}
-
-fn parse_env_value(content: &str, key: &str) -> Option<String> {
-    for raw_line in content.lines() {
-        let line = raw_line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-
-        let mut parts = line.splitn(2, '=');
-        let k = parts.next()?.trim();
-        let v = parts.next()?.trim();
-        if k != key {
-            continue;
-        }
-
-        let unquoted = if (v.starts_with('"') && v.ends_with('"'))
-            || (v.starts_with('\'') && v.ends_with('\''))
-        {
-            v[1..v.len().saturating_sub(1)].trim()
-        } else {
-            v
-        };
-
-        if !unquoted.is_empty() {
-            return Some(unquoted.to_string());
+    if let Ok(entry) = keyring::Entry::new("logline-cli", "supabase_access_token") {
+        if let Ok(token) = entry.get_password() {
+            cmd.env("SUPABASE_ACCESS_TOKEN", token);
+            return;
         }
     }
-    None
+
+    eprintln!("Warning: No SUPABASE_ACCESS_TOKEN found in keychain or env.");
+    eprintln!("  Store it with: logline supabase store-token");
 }
 
-fn parse_key_val(s: &str) -> Result<(String, String), String> {
-    let pos = s.find('=').ok_or_else(|| "must be KEY=VALUE".to_string())?;
-    Ok((s[..pos].to_string(), s[pos + 1..].to_string()))
-}
-
-fn print_json_or_text(json_mode: bool, value: serde_json::Value, text: &str) -> anyhow::Result<()> {
-    if json_mode {
-        println!("{}", serde_json::to_string_pretty(&value)?);
-    } else {
-        println!("{text}");
-    }
-    Ok(())
-}

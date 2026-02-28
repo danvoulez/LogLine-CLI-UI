@@ -2,12 +2,28 @@ import { NextRequest } from 'next/server';
 
 export type LoglineMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
+const DEFAULT_DAEMON_URL = 'https://logline.voulezvous.tv';
+
 function resolveDaemonBaseUrl(): string {
   return (
     process.env.LOGLINE_DAEMON_URL ||
     process.env.NEXT_PUBLIC_LOGLINE_DAEMON_URL ||
-    'http://127.0.0.1:7600'
+    DEFAULT_DAEMON_URL
   ).replace(/\/$/, '');
+}
+
+function isDefaultDaemon(baseUrl: string): boolean {
+  try {
+    const u = new URL(baseUrl);
+    const host = u.hostname.toLowerCase();
+    return (
+      host === '127.0.0.1' ||
+      host === 'localhost' ||
+      host === 'logline.voulezvous.tv'
+    );
+  } catch {
+    return false;
+  }
 }
 
 function resolveToken(req?: NextRequest): string | null {
@@ -28,7 +44,10 @@ export async function callLogline(
   body?: unknown
 ): Promise<Response> {
   const baseUrl = resolveDaemonBaseUrl();
-  const token = resolveToken(req);
+  let token = resolveToken(req);
+  if (!token && isDefaultDaemon(baseUrl)) {
+    token = 'dev-token';
+  }
 
   const headers = new Headers();
   headers.set('accept', 'application/json');
@@ -39,7 +58,14 @@ export async function callLogline(
       headers.set('authorization', auth);
     }
 
-    const passThroughHeaders = ['x-user-id', 'x-workspace-id', 'x-app-id', 'x-logline-token'];
+    const passThroughHeaders = [
+      'x-user-id',
+      'x-workspace-id',
+      'x-app-id',
+      'x-logline-token',
+      'x-llm-gateway-base-url',
+      'x-llm-gateway-token',
+    ];
     for (const key of passThroughHeaders) {
       const value = req.headers.get(key);
       if (value) {

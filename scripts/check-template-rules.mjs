@@ -11,7 +11,7 @@ const files = {
   panelRenderer: path.join(root, 'components/panel/PanelRenderer.tsx'),
   componentRenderer: path.join(root, 'components/panel/ComponentRenderer.tsx'),
   templateContract: path.join(root, 'lib/config/component-template.ts'),
-  effectiveConfig: path.join(root, 'lib/config/effective-config.ts'),
+  effectiveConfig: path.join(root, 'logline/crates/logline-daemon/src/main.rs'),
   templateDoc: path.join(root, 'docs/TEMPLATE_CONTRACT.md'),
 };
 
@@ -46,7 +46,7 @@ if (!appShell) warn(warnings, 'AppShell file missing or unreadable');
 if (!panelRenderer) warn(warnings, 'PanelRenderer file missing or unreadable');
 if (!componentRenderer) warn(warnings, 'ComponentRenderer file missing or unreadable');
 if (!templateContract) warn(warnings, 'Template contract file missing or unreadable');
-if (!effectiveConfig) warn(warnings, 'Effective config resolver file missing or unreadable');
+if (!effectiveConfig) warn(warnings, 'Effective config resolver source missing or unreadable');
 if (!templateDoc) warn(warnings, 'Template contract doc missing or unreadable');
 
 // Rule group: header scope identity
@@ -86,10 +86,10 @@ mustContain(warnings, panelRenderer, 'resolveTemplateContract', 'Panel sizing ru
 
 // Rule group: resolver enforces scope and override semantics
 [
-  'resolveScopedAppLayer',
-  'shouldOverrideCascade',
-  "parseImportedTags(instanceLayer, 'import_app_tags')",
-  "parseImportedTags(instanceLayer, 'import_tab_tags')",
+  'resolve_scoped_app_layer',
+  'should_override_cascade',
+  'parse_imported_tags(&instance_layer, "import_app_tags")',
+  'parse_imported_tags(&instance_layer, "import_tab_tags")',
   'app_scope',
 ].forEach((needle) => mustContain(warnings, effectiveConfig, needle, 'Cascade semantics rule'));
 

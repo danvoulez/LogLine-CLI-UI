@@ -5,8 +5,9 @@ import { AccessDeniedError, requireAccess } from '@/lib/auth/access';
 type Params = { params: Promise<{ path: string[] }> };
 
 async function proxy(req: NextRequest, { params }: Params, method: LoglineMethod): Promise<NextResponse> {
+  const permission = method === 'GET' ? 'read' : 'write';
   try {
-    await requireAccess(req, 'read');
+    await requireAccess(req, permission);
   } catch (err) {
     if (err instanceof AccessDeniedError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
@@ -16,6 +17,9 @@ async function proxy(req: NextRequest, { params }: Params, method: LoglineMethod
 
   const { path } = await params;
   const pathname = `/${path.join('/')}`;
+  if (pathname === '/v1/auth/session' || pathname.startsWith('/v1/auth/session/')) {
+    return NextResponse.json({ error: 'Forbidden route' }, { status: 403 });
+  }
   const search = req.nextUrl.search || '';
 
   let body: unknown = undefined;
@@ -40,10 +44,10 @@ async function proxy(req: NextRequest, { params }: Params, method: LoglineMethod
       },
     });
   } catch (error) {
+    console.error('[api/logline proxy]', error);
     return NextResponse.json(
       {
         error: 'Failed to reach logline daemon',
-        detail: error instanceof Error ? error.message : 'unknown error',
       },
       { status: 502 }
     );

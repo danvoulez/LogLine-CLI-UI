@@ -15,7 +15,7 @@ Merge rule:
 - Primitive values at higher layers override lower layers.
 
 Implementation reference:
-- `lib/config/effective-config.ts`
+- `logline/crates/logline-daemon/src/main.rs` (`get_effective_config` + cascade helpers)
 
 ## 2) Storage Mapping
 

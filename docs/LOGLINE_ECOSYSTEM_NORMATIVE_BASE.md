@@ -21,6 +21,9 @@ It exists to preserve clarity and speed, not bureaucracy.
 ## 3) Core Invariants (MUST)
 
 - Business logic MUST have a single authority in Rust runtime/control plane.
+- Domain capabilities MUST be defined in shared Rust core crates before transport/interface exposure.
+- CLI MUST be the first interface to implement and validate operator flow for new capabilities.
+- API/MCP adapters MUST mirror CLI-validated capabilities and MUST NOT expose behavior that bypasses CLI governance.
 - UI handlers MUST remain transport adapters/proxies, not domain engines.
 - Identity scope MUST resolve to `tenant_id`, `app_id`, and `user_id` before protected operations.
 - Sensitive mutations MUST pass `auth -> policy -> execution -> audit`.
@@ -92,6 +95,8 @@ Deferred:
 ## 10) Testable Checks (CI/Review)
 
 - `MUST-001`: no new app route contains DB-backed domain logic for Rust-owned resources.
+- `MUST-001A`: new capability PRs include core crate implementation before API/MCP exposure.
+- `MUST-001B`: API/MCP handlers reference existing CLI/core use-case, not duplicated domain logic.
 - `MUST-002`: mutating endpoints enforce access resolution and role checks.
 - `MUST-003`: billing artifacts reference usage event IDs and pricing version.
 - `MUST-004`: protected actions write audit evidence.

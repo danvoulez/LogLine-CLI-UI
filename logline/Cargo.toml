@@ -5,7 +5,6 @@ members = [
   "crates/logline-core",
   "crates/logline-connectors",
   "crates/logline-runtime",
-  "crates/logline-daemon",
   "crates/logline-cli",
 ]
 resolver = "2"

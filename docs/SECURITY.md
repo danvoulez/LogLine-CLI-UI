@@ -15,6 +15,7 @@ Sensitive values include:
 - `CLI_JWT` and onboarding secrets
 - daemon bootstrap token
 - `SUPABASE_JWT_SECRET` and `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_ACCOUNT_TOKEN` / `SUPABASE_ACCESS_TOKEN` (Supabase CLI/account tokens)
 
 ## 2) Identity and Scope Isolation
 
@@ -27,6 +28,11 @@ Sensitive values include:
 Identity resolution:
 - JWT mode (`AUTH_PROVIDER_MODE=jwt`): `Authorization: Bearer <supabase_jwt>`.
 - Compat mode (`AUTH_PROVIDER_MODE=compat`): header/query fallback for local dev.
+
+Token semantics:
+- `SUPABASE_ACCOUNT_TOKEN` / `SUPABASE_ACCESS_TOKEN` are for Supabase CLI/account operations.
+- They are not valid user auth credentials for `/api/v1/auth/*` or daemon `/v1/auth/*`.
+- User-facing auth endpoints require a Supabase user access JWT in `Authorization: Bearer <jwt>`.
 
 Scope resolution:
 - `x-workspace-id` / `workspace_id` query / default.
